@@ -1,0 +1,35 @@
+spring:
+  r2dbc:
+    url: ${SPRING_R2DBC_URL}
+    username: ${SPRING_R2DBC_USERNAME}
+    password: ${SPRING_R2DBC_PASSWORD}
+    pool:
+      enabled: ${SPRING_R2DBC_POOL_ENABLED:true}
+      initial-size: ${SPRING_R2DBC_POOL_INITIAL_SIZE:5}
+      max-size: ${SPRING_R2DBC_POOL_MAX_SIZE:50}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT}
+      password: ${SPRING_DATA_REDIS_PASSWORD}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    client-id: ${SPRING_KAFKA_CLIENT_ID:identity-access-service-prod}
+    listener:
+      missing-topics-fatal: ${SPRING_KAFKA_LISTENER_MISSING_TOPICS_FATAL:false}
+    producer:
+      acks: ${SPRING_KAFKA_PRODUCER_ACKS:all}
+      retries: ${SPRING_KAFKA_PRODUCER_RETRIES:5}
+      properties:
+        enable.idempotence: ${SPRING_KAFKA_PRODUCER_ENABLE_IDEMPOTENCE:true}
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:identity-access-service-prod}
+      auto-offset-reset: ${SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      enable-auto-commit: ${SPRING_KAFKA_CONSUMER_ENABLE_AUTO_COMMIT:false}
+
+app:
+  security:
+    jwt:
+      issuer: ${APP_SECURITY_JWT_ISSUER}
+      audience: ${APP_SECURITY_JWT_AUDIENCE}
