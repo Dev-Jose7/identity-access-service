@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:identity-access-service}
+  main:
+    web-application-type: reactive
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.arka.identityaccess: ${LOG_LEVEL_APP:INFO}
+  pattern:
+    console: ${LOG_PATTERN_CONSOLE:%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n}
+
+app:
+  runtime:
+    profile: ${SPRING_PROFILES_ACTIVE:}
+  dependencies:
+    postgres:
+      enabled: ${APP_DEP_POSTGRES_ENABLED:true}
+    redis:
+      enabled: ${APP_DEP_REDIS_ENABLED:true}
+    kafka:
+      enabled: ${APP_DEP_KAFKA_ENABLED:true}
+  security:
+    jwt:
+      issuer: ${APP_SECURITY_JWT_ISSUER:identity-access-service}
+      audience: ${APP_SECURITY_JWT_AUDIENCE:arka-b2b}
+      access-token-ttl-seconds: ${APP_SECURITY_JWT_ACCESS_TTL_SECONDS:900}
+      refresh-token-ttl-seconds: ${APP_SECURITY_JWT_REFRESH_TTL_SECONDS:604800}
+      clock-skew-seconds: ${APP_SECURITY_JWT_CLOCK_SKEW_SECONDS:60}
+      jwks-path: ${APP_SECURITY_JWT_JWKS_PATH:/.well-known/jwks.json}
+  redis:
+    cache:
+      introspection-ttl-seconds: ${APP_REDIS_CACHE_INTROSPECTION_TTL_SECONDS:30}
+      permissions-ttl-seconds: ${APP_REDIS_CACHE_PERMISSIONS_TTL_SECONDS:30}
+    rate-limit:
+      login-requests-per-minute: ${APP_REDIS_RATE_LIMIT_LOGIN_RPM:10}
+  kafka:
+    topics:
+      user-logged-in: ${APP_KAFKA_TOPIC_USER_LOGGED_IN:iam.user-logged-in.v1}
+      auth-failed: ${APP_KAFKA_TOPIC_AUTH_FAILED:iam.auth-failed.v1}
+      session-refreshed: ${APP_KAFKA_TOPIC_SESSION_REFRESHED:iam.session-refreshed.v1}
+      session-revoked: ${APP_KAFKA_TOPIC_SESSION_REVOKED:iam.session-revoked.v1}
+      sessions-revoked-by-user: ${APP_KAFKA_TOPIC_SESSIONS_REVOKED_BY_USER:iam.sessions-revoked-by-user.v1}
+      role-assigned: ${APP_KAFKA_TOPIC_ROLE_ASSIGNED:iam.role-assigned.v1}
+      user-blocked: ${APP_KAFKA_TOPIC_USER_BLOCKED:iam.user-blocked.v1}
+      organization-suspended: ${APP_KAFKA_TOPIC_ORGANIZATION_SUSPENDED:directory.organization-suspended.v1}
+  outbox:
+    relay:
+      enabled: ${APP_OUTBOX_RELAY_ENABLED:true}
+      batch-size: ${APP_OUTBOX_RELAY_BATCH_SIZE:200}
+      poll-interval-ms: ${APP_OUTBOX_RELAY_POLL_INTERVAL_MS:2000}
+      max-retries: ${APP_OUTBOX_RELAY_MAX_RETRIES:3}
+  idempotency:
+    processed-event:
+      consumer-name: ${APP_IDEMPOTENCY_CONSUMER_NAME:identity-access-service}

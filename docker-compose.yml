@@ -36,6 +36,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./init-identity-access.sql:/docker-entrypoint-initdb.d/01-init-identity-access.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:

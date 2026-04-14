@@ -24,9 +24,22 @@ logging:
   pattern:
     console: ${LOG_PATTERN_CONSOLE:%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n}
 
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
+    path: ${SPRINGDOC_API_DOCS_PATH:/v3/api-docs}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
+    path: ${SPRINGDOC_SWAGGER_UI_PATH:/swagger-ui.html}
+    operations-sorter: ${SPRINGDOC_SWAGGER_UI_OPERATIONS_SORTER:alpha}
+    tags-sorter: ${SPRINGDOC_SWAGGER_UI_TAGS_SORTER:alpha}
+
 app:
   runtime:
     profile: ${SPRING_PROFILES_ACTIVE:}
+  database:
+    schema:
+      initialize-on-startup: ${APP_DATABASE_SCHEMA_INITIALIZE_ON_STARTUP:false}
   dependencies:
     postgres:
       enabled: ${APP_DEP_POSTGRES_ENABLED:true}
@@ -36,6 +49,11 @@ app:
       enabled: ${APP_DEP_KAFKA_ENABLED:true}
   security:
     jwt:
+      algorithm: ${APP_SECURITY_JWT_ALGORITHM:RS256}
+      key-id: ${APP_SECURITY_JWT_KEY_ID:dev-rsa-key-1}
+      private-key-path: ${APP_SECURITY_JWT_PRIVATE_KEY_PATH:classpath:keys/dev-private.pem}
+      public-key-path: ${APP_SECURITY_JWT_PUBLIC_KEY_PATH:classpath:keys/dev-public.pem}
+      additional-public-keys: ${APP_SECURITY_JWT_ADDITIONAL_PUBLIC_KEYS:}
       issuer: ${APP_SECURITY_JWT_ISSUER:identity-access-service}
       audience: ${APP_SECURITY_JWT_AUDIENCE:arka-b2b}
       access-token-ttl-seconds: ${APP_SECURITY_JWT_ACCESS_TTL_SECONDS:900}
@@ -48,14 +66,15 @@ app:
       permissions-ttl-seconds: ${APP_REDIS_CACHE_PERMISSIONS_TTL_SECONDS:30}
     rate-limit:
       login-requests-per-minute: ${APP_REDIS_RATE_LIMIT_LOGIN_RPM:10}
+      refresh-requests-per-minute: ${APP_REDIS_RATE_LIMIT_REFRESH_RPM:30}
+      register-founder-requests-per-minute: ${APP_REDIS_RATE_LIMIT_REGISTER_FOUNDER_RPM:5}
   kafka:
     topics:
-      user-logged-in: ${APP_KAFKA_TOPIC_USER_LOGGED_IN:iam.user-logged-in.v1}
+      session-opened: ${APP_KAFKA_TOPIC_SESSION_OPENED:${APP_KAFKA_TOPIC_USER_LOGGED_IN:iam.session-opened.v1}}
       auth-failed: ${APP_KAFKA_TOPIC_AUTH_FAILED:iam.auth-failed.v1}
       session-refreshed: ${APP_KAFKA_TOPIC_SESSION_REFRESHED:iam.session-refreshed.v1}
       session-revoked: ${APP_KAFKA_TOPIC_SESSION_REVOKED:iam.session-revoked.v1}
-      sessions-revoked-by-user: ${APP_KAFKA_TOPIC_SESSIONS_REVOKED_BY_USER:iam.sessions-revoked-by-user.v1}
-      role-assigned: ${APP_KAFKA_TOPIC_ROLE_ASSIGNED:iam.role-assigned.v1}
+      role-assigned: ${APP_KAFKA_TOPIC_ROLE_ASSIGNED:iam.user-role-assigned.v1}
       user-blocked: ${APP_KAFKA_TOPIC_USER_BLOCKED:iam.user-blocked.v1}
       organization-suspended: ${APP_KAFKA_TOPIC_ORGANIZATION_SUSPENDED:directory.organization-suspended.v1}
   outbox:
