@@ -1,0 +1,360 @@
+Project identity_access_current {
+  database_type: "PostgreSQL"
+  note: "Esquema alineado con la arquitectura interna actual de identity-access-service y preparado para futuras credenciales."
+}
+
+/* ==========================================================
+ ENUMERACIONES
+========================================================== */
+
+Enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DISABLED
+}
+
+Enum CredentialType {
+  PASSWORD
+  OAUTH2
+  MFA
+  API_KEY
+}
+
+Enum CredentialPurpose {
+  PRIMARY
+  SECOND_FACTOR
+  TECHNICAL
+}
+
+Enum AuthProvider {
+  LOCAL
+  GOOGLE
+  GITHUB
+  MICROSOFT
+  INTERNAL
+}
+
+Enum CredentialStatus {
+  ACTIVE
+  ROTATED
+  COMPROMISED
+  REVOKED
+}
+
+Enum MfaType {
+  SMS
+  EMAIL
+  TOTP
+}
+
+Enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+Enum RevocationReason {
+  LOGOUT
+  USER_BLOCKED
+  ADMIN_REVOKED
+  TOKEN_ROTATED
+  INCIDENT_RESPONSE
+}
+
+Enum AssignmentStatus {
+  ACTIVE
+  REVOKED
+}
+
+Enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/* ==========================================================
+ IDENTITY
+========================================================== */
+
+Table user_account {
+  user_id uuid [pk, note: "Identidad del usuario."]
+  tenant_id varchar(100) [not null, note: "Tenant dueño del usuario."]
+  email varchar(320) [not null, note: "Email principal consolidado."]
+  status UserStatus [not null, default: 'ACTIVE', note: "Estado funcional del usuario."]
+  failed_login_count integer [not null, default: 0, note: "Contador agregado de intentos fallidos."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (user_id, tenant_id) [unique, note: "Soporte para referencias compuestas con integridad de tenant."]
+    (tenant_id, email) [unique, note: "Lookup principal por tenant + email."]
+    (tenant_id, status)
+  }
+}
+
+/* ==========================================================
+ CREDENTIALS
+========================================================== */
+
+Table credential {
+  credential_id uuid [pk, note: "Raiz comun de credenciales del usuario."]
+  user_id uuid [not null, note: "Usuario dueño de la credencial."]
+  tenant_id varchar(100) [not null, note: "Tenant dueño de la credencial."]
+  credential_type CredentialType [not null, note: "Tipo tecnico de credencial."]
+  credential_purpose CredentialPurpose [not null, default: 'PRIMARY', note: "Proposito funcional: primaria, segundo factor o tecnica."]
+  provider AuthProvider [not null, note: "Proveedor de autenticacion o gestion."]
+  status CredentialStatus [not null, default: 'ACTIVE', note: "Estado general de la credencial."]
+  last_used_at timestamp [note: "Ultimo uso tecnico observado."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (credential_id, tenant_id) [unique, note: "Soporte para integridad compuesta desde componentes dependientes."]
+    (user_id, credential_type)
+    (user_id, credential_type, credential_purpose, provider) [unique, note: "Regla de negocio actual: una credencial por tipo/proposito/proveedor por usuario."]
+    (tenant_id, credential_type, status)
+    (provider, status)
+  }
+}
+
+Table credential_password {
+  credential_id uuid [pk, note: "Subtipo password local."]
+  password_hash varchar(255) [not null, note: "Hash seguro de la password."]
+  hash_algorithm varchar(50) [not null, note: "Algoritmo del hash."]
+  password_changed_at timestamp [note: "Ultimo cambio de password."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+}
+
+Table credential_oauth2 {
+  credential_id uuid [pk, note: "Subtipo de credencial federada OAuth2."]
+  provider_subject varchar(255) [not null, note: "Identidad del usuario en el provider."]
+  provider_email varchar(320) [note: "Email reportado por el provider."]
+  access_token_ref varchar(255) [note: "Referencia segura al access token, no token en claro."]
+  refresh_token_ref varchar(255) [note: "Referencia segura al refresh token, no token en claro."]
+  expires_at timestamp [note: "Expiracion del token federado."]
+  linked_at timestamp [note: "Momento de vinculacion."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (provider_subject)
+    (provider_email)
+  }
+}
+
+Table credential_mfa {
+  credential_id uuid [pk, note: "Subtipo MFA."]
+  factor_type MfaType [not null, note: "Tipo de segundo factor."]
+  secret_ref varchar(255) [note: "Referencia segura al secreto MFA."]
+  recipient varchar(255) [note: "Destino del codigo o challenge."]
+  verified_at timestamp [note: "Momento en que el factor quedo verificado."]
+  enabled boolean [not null, default: true, note: "Indica si el factor esta habilitado."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (factor_type)
+    (recipient)
+  }
+}
+
+Table credential_api_key {
+  credential_id uuid [pk, note: "Subtipo API key."]
+  key_prefix varchar(20) [not null, note: "Prefijo visible de la API key."]
+  key_hash varchar(255) [not null, note: "Hash seguro de la API key."]
+  expires_at timestamp [note: "Expiracion de la key."]
+  revoked_at timestamp [note: "Revocacion tecnica."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (key_prefix) [unique]
+    (key_hash) [unique]
+    (expires_at)
+  }
+}
+
+Table user_login_attempt {
+  attempt_id uuid [pk, note: "Intento de login persistido."]
+  user_id uuid [not null, note: "Usuario al que pertenece el intento."]
+  attempt_at timestamp [not null, note: "Momento del intento."]
+  success boolean [not null, note: "Resultado del intento."]
+  ip_address varchar(64) [note: "IP observada."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (user_id, attempt_at)
+    (user_id, success)
+    (ip_address, attempt_at)
+  }
+}
+
+/* ==========================================================
+ SESSION
+========================================================== */
+
+Table user_session {
+  session_id uuid [pk, note: "Identidad de la sesion."]
+  user_id uuid [not null, note: "Usuario dueño de la sesion."]
+  tenant_id varchar(100) [not null, note: "Tenant de la sesion."]
+  access_jti varchar(128) [not null, note: "JTI del access token vigente."]
+  refresh_jti varchar(128) [not null, note: "JTI del refresh token vigente."]
+  status SessionStatus [not null, default: 'ACTIVE']
+  issued_at timestamp [not null, note: "Inicio tecnico de la sesion."]
+  expires_at timestamp [not null, note: "Expiracion vigente."]
+  last_seen_at timestamp [note: "Ultima actividad observada."]
+  revoked_at timestamp [note: "Momento de revocacion."]
+  revocation_reason RevocationReason [note: "Motivo funcional de revocacion."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (access_jti) [unique]
+    (refresh_jti) [unique]
+    (session_id, tenant_id) [unique, note: "Soporte para referencias compuestas con integridad de tenant."]
+    (user_id, tenant_id, status)
+    (tenant_id, status)
+    (expires_at)
+  }
+}
+
+/* ==========================================================
+ ACCESS / RBAC
+========================================================== */
+
+Table role {
+  role_id uuid [pk, note: "Identidad del rol."]
+  tenant_id varchar(100) [not null, note: "Tenant dueño del rol."]
+  role_code varchar(100) [not null, note: "Codigo funcional del rol."]
+  description varchar(255) [note: "Descripcion operacional."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (role_id, tenant_id) [unique, note: "Soporte para referencias compuestas con integridad de tenant."]
+    (tenant_id, role_code) [unique]
+  }
+}
+
+Table role_permission {
+  role_id uuid [not null, note: "Rol dueño del permiso."]
+  permission_code varchar(150) [not null, note: "Codigo del permiso."]
+  resource varchar(100) [not null, note: "Recurso protegido."]
+  action varchar(100) [not null, note: "Accion permitida."]
+  scope varchar(100) [not null, default: 'TENANT', note: "Alcance del permiso."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (role_id, permission_code, resource, action, scope) [pk]
+  }
+}
+
+Table user_role_assignment {
+  assignment_id uuid [pk, note: "Identidad propia de la asignacion."]
+  user_id uuid [not null]
+  role_id uuid [not null]
+  tenant_id varchar(100) [not null]
+  status AssignmentStatus [not null, default: 'ACTIVE']
+  assigned_by varchar(150) [note: "Actor que realizo la asignacion."]
+  assigned_at timestamp [note: "Momento de asignacion."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (assignment_id, tenant_id) [unique, note: "Soporte para referencias compuestas con integridad de tenant."]
+    (user_id, role_id, tenant_id) [unique]
+    (user_id, tenant_id, status)
+    (role_id)
+  }
+}
+
+/* ==========================================================
+ AUDIT / OUTBOX / IDEMPOTENCIA
+========================================================== */
+
+Table auth_audit {
+  audit_id uuid [pk, note: "Registro de auditoria de seguridad."]
+  tenant_id varchar(100) [not null]
+  user_id uuid [not null]
+  event_type varchar(100) [not null, note: "Tipo del hecho auditado."]
+  result varchar(50) [not null, note: "Resultado tecnico/funcional."]
+  payload jsonb [note: "Payload tecnico adicional."]
+  created_at timestamp [not null]
+
+  indexes {
+    (tenant_id, user_id, created_at)
+    (event_type, created_at)
+  }
+}
+
+Table outbox_event {
+  event_id uuid [pk, note: "Identidad del evento en outbox."]
+  aggregate_type varchar(100) [not null]
+  aggregate_id varchar(100) [not null]
+  event_type varchar(100) [not null]
+  payload jsonb [not null]
+  status OutboxStatus [not null, default: 'PENDING']
+  occurred_at timestamp [not null]
+  published_at timestamp
+  retry_count integer [not null, default: 0]
+  last_error text
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (status, occurred_at)
+    (aggregate_type, aggregate_id)
+    (event_type, status)
+  }
+}
+
+Table processed_event {
+  processed_event_id uuid [pk, note: "Registro de deduplicacion de consumidores."]
+  event_id varchar(100) [not null]
+  consumer_name varchar(150) [not null]
+  processed_at timestamp [not null]
+
+  indexes {
+    (event_id, consumer_name) [unique]
+  }
+}
+
+/* ==========================================================
+ RELACIONES
+========================================================== */
+
+Ref: credential.(user_id, tenant_id) > user_account.(user_id, tenant_id) [delete: cascade]
+
+Ref: credential_password.credential_id > credential.credential_id [delete: cascade]
+Ref: credential_oauth2.credential_id > credential.credential_id [delete: cascade]
+Ref: credential_mfa.credential_id > credential.credential_id [delete: cascade]
+Ref: credential_api_key.credential_id > credential.credential_id [delete: cascade]
+
+Ref: user_login_attempt.user_id > user_account.user_id [delete: cascade]
+
+Ref: user_session.(user_id, tenant_id) > user_account.(user_id, tenant_id) [delete: cascade]
+
+Ref: role_permission.role_id > role.role_id [delete: cascade]
+
+Ref: user_role_assignment.(user_id, tenant_id) > user_account.(user_id, tenant_id) [delete: cascade]
+Ref: user_role_assignment.(role_id, tenant_id) > role.(role_id, tenant_id) [delete: cascade]
+
+Ref: auth_audit.(user_id, tenant_id) > user_account.(user_id, tenant_id) [delete: cascade]
+
+/* ==========================================================
+ RESTRICCIONES SQL RECOMENDADAS FUERA DE DBML
+========================================================== */
+
+/*
+1. Si se quiere permitir multiples API keys o multiples factores MFA por usuario,
+   reemplazar la constraint unica de `credential(user_id, credential_type, credential_purpose, provider)`
+   por indices parciales por subtipo.
+
+2. Para OAuth2, reforzar unicidad por provider + subject con una de estas opciones:
+   - columna redundante `provider` en `credential_oauth2` + unique(provider, provider_subject)
+   - indice SQL sobre join/materialized column si se mantiene el provider solo en `credential`
+
+3. Para PASSWORD, si debe existir una sola credencial primaria local por usuario,
+   mantener la constraint unica actual sobre `credential`.
+*/

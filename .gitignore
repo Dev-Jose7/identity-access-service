@@ -20,5 +20,3 @@ build/
 .env
 
 # Docs
-/content
-/prompt-pack

@@ -1,0 +1,317 @@
+Project directory_current {
+  database_type: "PostgreSQL"
+  note: "Esquema alineado con el dominio y la arquitectura actual de directory-service para organizaciones B2B, perfiles locales de usuario, contactos institucionales y politica regional."
+}
+
+/* ==========================================================
+ ENUMERACIONES
+========================================================== */
+
+Enum OrganizationStatus {
+  ONBOARDING
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+Enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+Enum OrganizationUserProfileStatus {
+  ACTIVE
+  INACTIVE
+}
+
+Enum OrganizationContactType {
+  EMAIL
+  PHONE
+  WHATSAPP
+  WEBSITE
+}
+
+Enum OrganizationContactStatus {
+  ACTIVE
+  INACTIVE
+}
+
+Enum AddressType {
+  BILLING
+  SHIPPING
+  WAREHOUSE
+  OFFICE
+}
+
+Enum AddressStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+Enum AddressValidationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+Enum CountryPolicyStatus {
+  ACTIVE
+  INACTIVE
+  SUPERSEDED
+}
+
+Enum AuditActorType {
+  USER
+  SYSTEM
+  LISTENER
+}
+
+Enum AuditResult {
+  SUCCESS
+  FAILURE
+}
+
+Enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/* ==========================================================
+ CORE
+========================================================== */
+
+Table organization {
+  organization_id uuid [pk, note: "Identidad de la organizacion en Directory."]
+  tenant_id varchar(100) [not null, note: "Tenant de aislamiento del BC."]
+  organization_code varchar(64) [not null, note: "Codigo estable dentro del tenant."]
+  legal_name varchar(255) [not null, note: "Razon social vigente."]
+  trade_name varchar(255) [note: "Nombre comercial visible."]
+  country_code char(2) [not null, note: "Pais base de la organizacion."]
+  currency_code char(3) [not null, note: "Moneda operativa por defecto."]
+  timezone varchar(64) [not null, note: "Zona horaria IANA por defecto."]
+  segment_tier varchar(16) [not null, note: "Segmentacion comercial ligera del tenant."]
+  status OrganizationStatus [not null, default: 'ONBOARDING']
+  billing_email varchar(320) [note: "Email administrativo principal."]
+  website_url varchar(255) [note: "Sitio web institucional."]
+  preferred_contact_type OrganizationContactType [note: "Canal institucional preferido a nivel organizacional."]
+  credit_enabled boolean [not null, default: false, note: "Bandera comercial ligera embebida en la raiz."]
+  monthly_credit_limit numeric(14,2) [note: "Limite comercial ligero del tenant."]
+  activated_at timestamp [note: "Activacion operacional."]
+  suspended_at timestamp [note: "Suspension operacional."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (tenant_id, organization_code) [unique, note: "Lookup principal por tenant y codigo."]
+    (organization_id, tenant_id) [unique, note: "Soporte para referencias compuestas con integridad de tenant."]
+    (tenant_id, status)
+    (country_code, status)
+  }
+}
+
+Table organization_legal_profile {
+  legal_profile_id uuid [pk, note: "Perfil legal actual de la organizacion."]
+  organization_id uuid [not null, unique, note: "Organizacion dueña del perfil legal."]
+  country_code char(2) [not null, note: "Pais regulatorio del tax id."]
+  tax_id_type varchar(16) [not null, note: "Tipo local del identificador tributario."]
+  tax_id varchar(64) [not null, note: "Identificador tributario normalizado."]
+  fiscal_regime varchar(64) [note: "Regimen fiscal declarado."]
+  legal_representative varchar(255) [note: "Representante legal actual."]
+  verification_status VerificationStatus [not null, default: 'PENDING']
+  verified_at timestamp [note: "Momento de verificacion."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (country_code, tax_id) [note: "Lookup legal y soporte para regla de unicidad funcional."]
+  }
+}
+
+Table organization_user_profile {
+  profile_id uuid [pk, note: "Perfil local de usuario organizacional."]
+  organization_id uuid [not null, note: "Organizacion dueña del perfil."]
+  tenant_id varchar(100) [not null, note: "Tenant de aislamiento del perfil."]
+  iam_user_id uuid [not null, note: "Usuario referencial de identity-access."]
+  email varchar(320) [note: "Email sincronizado de forma referencial."]
+  first_name varchar(120) [note: "Nombre visible del usuario."]
+  last_name varchar(120) [note: "Apellido visible del usuario."]
+  job_title varchar(120) [note: "Cargo dentro de la organizacion."]
+  department varchar(120) [note: "Area o departamento."]
+  avatar_url varchar(255) [note: "Avatar operativo opcional."]
+  locale varchar(16) [note: "Preferencia local del perfil."]
+  timezone varchar(64) [note: "Zona horaria operativa del perfil."]
+  role_reference varchar(100) [note: "Referencia local del rol, no fuente de verdad."]
+  ownership_scope varchar(64) [note: "Referencia local de ownership o alcance."]
+  status OrganizationUserProfileStatus [not null, default: 'ACTIVE']
+  last_iam_sync_at timestamp [note: "Ultima reconciliacion con IAM."]
+  blocked_at timestamp [note: "Marca local si IAM reporto bloqueo."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (organization_id, iam_user_id) [unique, note: "Un solo perfil local por usuario IAM dentro de la organizacion."]
+    (tenant_id, status)
+    (organization_id, status)
+    (email)
+  }
+}
+
+Table organization_contact {
+  contact_id uuid [pk, note: "Contacto institucional del tenant."]
+  organization_id uuid [not null, note: "Organizacion dueña del contacto."]
+  tenant_id varchar(100) [not null, note: "Tenant de aislamiento del contacto."]
+  contact_type OrganizationContactType [not null, note: "Canal institucional."]
+  label varchar(32) [not null, note: "Etiqueta funcional: PURCHASING, FINANCE, SUPPORT, GENERAL, etc."]
+  contact_value varchar(320) [not null, note: "Valor del canal institucional."]
+  normalized_contact_value varchar(320) [not null, note: "Valor normalizado para unicidad y busqueda."]
+  is_primary boolean [not null, default: false, note: "Contacto institucional primario por tipo."]
+  status OrganizationContactStatus [not null, default: 'ACTIVE']
+  idempotency_key varchar(128) [note: "Control de idempotencia en mutaciones HTTP."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (organization_id, status, contact_type)
+    (organization_id, contact_type, normalized_contact_value) [unique, note: "Evita duplicidad funcional por tipo dentro de la organizacion."]
+    (organization_id, contact_type, is_primary, status) [note: "Soporte para unicidad del primario activo por tipo."]
+    (idempotency_key) [unique]
+  }
+}
+
+Table address {
+  address_id uuid [pk, note: "Direccion operativa de la organizacion."]
+  organization_id uuid [not null, note: "Organizacion dueña de la direccion."]
+  tenant_id varchar(100) [not null, note: "Tenant de aislamiento."]
+  address_type AddressType [not null]
+  alias varchar(120) [note: "Alias operativo de la direccion."]
+  line1 varchar(255) [not null]
+  line2 varchar(255) [note: "Complemento opcional."]
+  city varchar(120) [not null]
+  state varchar(120) [note: "Departamento, estado o provincia."]
+  postal_code varchar(20) [note: "Codigo postal."]
+  country_code char(2) [not null]
+  reference varchar(255) [note: "Referencia descriptiva adicional."]
+  latitude numeric(10,7) [note: "Latitud opcional."]
+  longitude numeric(10,7) [note: "Longitud opcional."]
+  is_default boolean [not null, default: false]
+  status AddressStatus [not null, default: 'ACTIVE']
+  validation_status AddressValidationStatus [not null, default: 'PENDING']
+  validated_at timestamp [note: "Ultima validacion exitosa o rechazada."]
+  validation_provider varchar(64) [note: "Proveedor usado en la ultima validacion."]
+  validation_payload json [note: "Evidencia compacta del ultimo resultado de validacion."]
+  idempotency_key varchar(128) [note: "Control de idempotencia para altas/updates."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (organization_id, status, address_type)
+    (organization_id, address_type, is_default, status) [note: "Soporte para unicidad del default activo por tipo."]
+    (country_code, city)
+    (idempotency_key) [unique]
+  }
+}
+
+Table organization_country_policy {
+  policy_id uuid [pk, note: "Politica operativa versionada por pais."]
+  organization_id uuid [not null, note: "Organizacion dueña de la politica."]
+  tenant_id varchar(100) [not null, note: "Tenant de aislamiento."]
+  country_code char(2) [not null]
+  policy_version integer [not null, note: "Version monotona por organizacion y pais."]
+  currency_code char(3) [not null]
+  week_starts_on varchar(16) [not null]
+  weekly_cutoff_local_time varchar(8) [not null, note: "Hora local de corte semanal."]
+  timezone varchar(64) [not null]
+  reporting_retention_days integer [not null]
+  effective_from timestamp [not null]
+  effective_to timestamp [note: "Fin opcional de vigencia."]
+  status CountryPolicyStatus [not null, default: 'ACTIVE']
+  idempotency_key varchar(128) [note: "Control de idempotencia de configuracion."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+  updated_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (organization_id, country_code, policy_version) [unique, note: "Versionado monotono por pais."]
+    (organization_id, country_code, status) [note: "Soporte para politica activa unica."]
+    (organization_id, country_code, effective_from)
+    (idempotency_key) [unique]
+  }
+}
+
+/* ==========================================================
+ TECNICAS
+========================================================== */
+
+Table directory_audit {
+  audit_id uuid [pk, note: "Auditoria tecnica y operativa del BC."]
+  tenant_id varchar(100) [not null]
+  organization_id uuid [note: "Organizacion afectada cuando aplica."]
+  actor_user_id uuid [note: "Actor humano si existe."]
+  actor_type AuditActorType [not null, default: 'USER']
+  action varchar(64) [not null]
+  entity_type varchar(32) [not null]
+  entity_id varchar(128) [not null]
+  result AuditResult [not null]
+  reason_code varchar(64) [note: "Motivo funcional de rechazo o fallo."]
+  trace_id varchar(128) [not null]
+  correlation_id varchar(128) [not null]
+  payload_json json [note: "Payload tecnico resumido."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (organization_id, created_at)
+    (tenant_id, created_at)
+    (trace_id)
+    (correlation_id)
+    (action)
+  }
+}
+
+Table outbox_event {
+  event_id uuid [pk, note: "Evento de integracion pendiente o publicado."]
+  tenant_id varchar(100) [not null]
+  organization_id uuid [note: "Organizacion del agregado emisor si aplica."]
+  aggregate_type varchar(64) [not null]
+  aggregate_id varchar(128) [not null]
+  event_type varchar(128) [not null]
+  event_version varchar(16) [not null]
+  payload_json json [not null]
+  status OutboxStatus [not null, default: 'PENDING']
+  occurred_at timestamp [not null]
+  published_at timestamp [note: "Marca de publicacion en broker."]
+  created_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (status, occurred_at)
+    (tenant_id, aggregate_type, aggregate_id)
+    (organization_id, status)
+  }
+}
+
+Table processed_event {
+  processed_event_id uuid [pk, note: "Registro de evento consumido para dedupe."]
+  tenant_id varchar(100) [note: "Tenant asociado al evento si aplica."]
+  organization_id uuid [note: "Organizacion asociada al evento si aplica."]
+  event_id varchar(128) [not null]
+  consumer_name varchar(128) [not null]
+  event_type varchar(128) [note: "Tipo de evento procesado."]
+  processed_at timestamp [not null, default: 'CURRENT_TIMESTAMP']
+
+  indexes {
+    (event_id, consumer_name) [unique, note: "Idempotencia por evento y consumidor."]
+    (tenant_id, processed_at)
+    (organization_id, processed_at)
+  }
+}
+
+/* ==========================================================
+ RELACIONES
+========================================================== */
+
+Ref: organization_legal_profile.organization_id > organization.organization_id [delete: cascade]
+Ref: organization_user_profile.organization_id > organization.organization_id [delete: cascade]
+Ref: organization_contact.organization_id > organization.organization_id [delete: cascade]
+Ref: address.organization_id > organization.organization_id [delete: cascade]
+Ref: organization_country_policy.organization_id > organization.organization_id [delete: cascade]
