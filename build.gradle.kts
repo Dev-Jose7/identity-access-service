@@ -5,10 +5,13 @@ plugins {
     id("jacoco")
 }
 
-group = "com.arka"
+group = "io.identityaccess"
 version = "0.1.0-SNAPSHOT"
 
-description = "Identity and access microservice for B2B authentication, sessions, and authorization"
+description = "Identity and access microservice for self-hosted authentication, sessions, and authorization"
+
+val testcontainersVersion = "2.0.5"
+extra["testcontainers.version"] = testcontainersVersion
 
 java {
     toolchain {
@@ -39,11 +42,45 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation("org.springframework.kafka:spring-kafka-test")
+    testImplementation(enforcedPlatform("org.testcontainers:testcontainers-bom:$testcontainersVersion"))
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("org.testcontainers:testcontainers-postgresql")
+    testImplementation("org.testcontainers:testcontainers-kafka")
 }
+
+val integrationTest by sourceSets.creating {
+    java.srcDir("src/integrationTest/java")
+    resources.srcDir("src/integrationTest/resources")
+    compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+    runtimeClasspath += output + compileClasspath
+}
+
+configurations[integrationTest.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.test {
     finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests backed by Testcontainers."
+    group = "verification"
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    shouldRunAfter(tasks.test)
+    environment("DOCKER_API_VERSION", "1.54")
+    environment("DOCKER_HOST", "unix://${System.getProperty("user.home")}/.docker/run/docker.sock")
+    environment("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
+    systemProperty(
+        "docker.client.strategy",
+        "org.testcontainers.dockerclient.EnvironmentAndSystemPropertyClientProviderStrategy"
+    )
+    useJUnitPlatform()
 }
 
 jacoco {

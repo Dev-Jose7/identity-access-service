@@ -11,8 +11,6 @@ ALTER TABLE user_account
     ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;
-ALTER TABLE user_account
-    DROP COLUMN IF EXISTS organization_id;
 
 CREATE INDEX IF NOT EXISTS idx_user_account_email ON user_account (email);
 CREATE INDEX IF NOT EXISTS idx_user_account_status ON user_account (status);
@@ -60,22 +58,93 @@ CREATE TABLE IF NOT EXISTS role (
     role_id              VARCHAR(100) PRIMARY KEY,
     role_code            VARCHAR(100) NOT NULL UNIQUE,
     description          VARCHAR(255) NOT NULL,
+    status               VARCHAR(30)  NOT NULL DEFAULT 'ACTIVE',
+    protected_role       BOOLEAN      NOT NULL DEFAULT FALSE,
+    exclusive_assignment BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at           TIMESTAMP    NOT NULL,
     updated_at           TIMESTAMP    NOT NULL
 );
+
+ALTER TABLE role
+    ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
+    ADD COLUMN IF NOT EXISTS protected_role BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS exclusive_assignment BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_role_status ON role (status);
+
+CREATE TABLE IF NOT EXISTS permission (
+    permission_id        VARCHAR(100) PRIMARY KEY,
+    permission_code      VARCHAR(150) NOT NULL UNIQUE,
+    resource             VARCHAR(100) NOT NULL,
+    action               VARCHAR(100) NOT NULL,
+    scope                VARCHAR(50)  NOT NULL DEFAULT 'GLOBAL',
+    description          VARCHAR(255) NOT NULL,
+    status               VARCHAR(30)  NOT NULL DEFAULT 'ACTIVE',
+    system_permission    BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at           TIMESTAMP    NOT NULL,
+    updated_at           TIMESTAMP    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_permission_status ON permission (status);
+CREATE INDEX IF NOT EXISTS idx_permission_resource_action ON permission (resource, action);
 
 CREATE TABLE IF NOT EXISTS role_permission (
     role_id              VARCHAR(100) NOT NULL,
     permission_code      VARCHAR(150) NOT NULL,
     resource             VARCHAR(100) NOT NULL,
     action               VARCHAR(100) NOT NULL,
-    scope                VARCHAR(50)  NOT NULL DEFAULT 'ORGANIZATION',
+    scope                VARCHAR(50)  NOT NULL DEFAULT 'GLOBAL',
     created_at           TIMESTAMP    NOT NULL,
     PRIMARY KEY (role_id, permission_code, resource, action, scope),
     CONSTRAINT fk_role_permission_role
         FOREIGN KEY (role_id) REFERENCES role(role_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_role_permission_permission
+        FOREIGN KEY (permission_code) REFERENCES permission(permission_code)
         ON DELETE CASCADE
 );
+
+ALTER TABLE role_permission
+    ALTER COLUMN scope SET DEFAULT 'GLOBAL';
+
+INSERT INTO permission (
+    permission_id,
+    permission_code,
+    resource,
+    action,
+    scope,
+    description,
+    status,
+    system_permission,
+    created_at,
+    updated_at
+)
+SELECT
+    'permission-' || md5(rp.permission_code),
+    rp.permission_code,
+    rp.resource,
+    rp.action,
+    rp.scope,
+    rp.permission_code,
+    'ACTIVE',
+    TRUE,
+    NOW(),
+    NOW()
+FROM role_permission rp
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM permission p
+    WHERE p.permission_code = rp.permission_code
+)
+ON CONFLICT (permission_code) DO NOTHING;
+
+ALTER TABLE role_permission
+    DROP CONSTRAINT IF EXISTS fk_role_permission_permission;
+
+ALTER TABLE role_permission
+    ADD CONSTRAINT fk_role_permission_permission
+    FOREIGN KEY (permission_code) REFERENCES permission(permission_code)
+    ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS role_assignment_policy (
     assigner_role_id     VARCHAR(100) NOT NULL,
@@ -113,6 +182,11 @@ CREATE TABLE IF NOT EXISTS user_role_assignment (
 
 CREATE INDEX IF NOT EXISTS idx_user_role_assignment_user_id ON user_role_assignment (user_id);
 CREATE INDEX IF NOT EXISTS idx_user_role_assignment_role_id ON user_role_assignment (role_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_role_assignment_single_active_system_admin
+    ON user_role_assignment (role_id)
+    WHERE status = 'ACTIVE'
+      AND role_id = '9de6fc0e-13d2-42a1-9232-4df6cdbf6f31';
 
 CREATE TABLE IF NOT EXISTS user_login_attempt (
     attempt_id           VARCHAR(100) PRIMARY KEY,
@@ -163,10 +237,6 @@ ALTER TABLE user_session
     ADD COLUMN IF NOT EXISTS revocation_reason VARCHAR(255),
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;
-ALTER TABLE user_session
-    DROP COLUMN IF EXISTS organization_id,
-    DROP COLUMN IF EXISTS roles,
-    DROP COLUMN IF EXISTS expires_at;
 
 CREATE INDEX IF NOT EXISTS idx_user_session_user_id ON user_session (user_id);
 CREATE INDEX IF NOT EXISTS idx_user_session_status ON user_session (status);

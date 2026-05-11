@@ -32,3 +32,8 @@ app:
   database:
     schema:
       initialize-on-startup: ${APP_DATABASE_SCHEMA_INITIALIZE_ON_STARTUP:true}
+  security:
+    jwt:
+      private-key-path: ${APP_SECURITY_JWT_PRIVATE_KEY_PATH:classpath:keys/dev-private.pem}
+      public-key-path: ${APP_SECURITY_JWT_PUBLIC_KEY_PATH:classpath:keys/dev-public.pem}
+      additional-public-keys: ${APP_SECURITY_JWT_ADDITIONAL_PUBLIC_KEYS:}

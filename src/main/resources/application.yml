@@ -4,6 +4,12 @@ spring:
   main:
     web-application-type: reactive
 
+eureka:
+  client:
+    enabled: ${EUREKA_CLIENT_ENABLED:false}
+    register-with-eureka: ${EUREKA_CLIENT_REGISTER_WITH_EUREKA:false}
+    fetch-registry: ${EUREKA_CLIENT_FETCH_REGISTRY:false}
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -20,7 +26,7 @@ management:
 logging:
   level:
     root: ${LOG_LEVEL_ROOT:INFO}
-    com.arka.identityaccess: ${LOG_LEVEL_APP:INFO}
+    io.identityaccess: ${LOG_LEVEL_APP:INFO}
   pattern:
     console: ${LOG_PATTERN_CONSOLE:%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n}
 
@@ -55,7 +61,7 @@ app:
       public-key-path: ${APP_SECURITY_JWT_PUBLIC_KEY_PATH:classpath:keys/dev-public.pem}
       additional-public-keys: ${APP_SECURITY_JWT_ADDITIONAL_PUBLIC_KEYS:}
       issuer: ${APP_SECURITY_JWT_ISSUER:identity-access-service}
-      audience: ${APP_SECURITY_JWT_AUDIENCE:arka-b2b}
+      audience: ${APP_SECURITY_JWT_AUDIENCE:identity-access-client}
       access-token-ttl-seconds: ${APP_SECURITY_JWT_ACCESS_TTL_SECONDS:900}
       refresh-token-ttl-seconds: ${APP_SECURITY_JWT_REFRESH_TTL_SECONDS:604800}
       clock-skew-seconds: ${APP_SECURITY_JWT_CLOCK_SKEW_SECONDS:60}
@@ -67,23 +73,43 @@ app:
     rate-limit:
       login-requests-per-minute: ${APP_REDIS_RATE_LIMIT_LOGIN_RPM:10}
       refresh-requests-per-minute: ${APP_REDIS_RATE_LIMIT_REFRESH_RPM:30}
-      register-founder-requests-per-minute: ${APP_REDIS_RATE_LIMIT_REGISTER_FOUNDER_RPM:5}
+      registration-requests-per-minute: ${APP_REDIS_RATE_LIMIT_REGISTRATION_RPM:5}
+  iam:
+    registration:
+      public-enabled: ${APP_IAM_REGISTRATION_PUBLIC_ENABLED:true}
+      public-default-role-code: ${APP_IAM_REGISTRATION_PUBLIC_DEFAULT_ROLE_CODE:ACCOUNT_USER}
+      primary-enabled: ${APP_IAM_REGISTRATION_PRIMARY_ENABLED:true}
+      primary-initial-role-code: ${APP_IAM_REGISTRATION_PRIMARY_INITIAL_ROLE_CODE:SYSTEM_ADMIN}
+      admin-default-role-code: ${APP_IAM_REGISTRATION_ADMIN_DEFAULT_ROLE_CODE:ACCOUNT_USER}
+      protected-role-codes: ${APP_IAM_REGISTRATION_PROTECTED_ROLE_CODES:SYSTEM_ADMIN}
   kafka:
     topics:
-      user-logged-in: ${APP_KAFKA_TOPIC_USER_LOGGED_IN:iam.user-logged-in.v1}
+      session-opened: ${APP_KAFKA_TOPIC_SESSION_OPENED:iam.session-opened.v1}
+      account-registered: ${APP_KAFKA_TOPIC_ACCOUNT_REGISTERED:iam.account-registered.v1}
       auth-failed: ${APP_KAFKA_TOPIC_AUTH_FAILED:iam.auth-failed.v1}
       session-refreshed: ${APP_KAFKA_TOPIC_SESSION_REFRESHED:iam.session-refreshed.v1}
       session-revoked: ${APP_KAFKA_TOPIC_SESSION_REVOKED:iam.session-revoked.v1}
-      sessions-revoked-by-user: ${APP_KAFKA_TOPIC_SESSIONS_REVOKED_BY_USER:iam.sessions-revoked-by-user.v1}
-      role-assigned: ${APP_KAFKA_TOPIC_ROLE_ASSIGNED:iam.user-role-assigned.v1}
-      user-blocked: ${APP_KAFKA_TOPIC_USER_BLOCKED:iam.user-blocked.v1}
-      organization-suspended: ${APP_KAFKA_TOPIC_ORGANIZATION_SUSPENDED:directory.organization-suspended.v1}
+      role-assigned-to-account: ${APP_KAFKA_TOPIC_ROLE_ASSIGNED_TO_ACCOUNT:iam.role-assigned-to-account.v1}
+      account-blocked: ${APP_KAFKA_TOPIC_ACCOUNT_BLOCKED:iam.account-blocked.v1}
+      account-unblocked: ${APP_KAFKA_TOPIC_ACCOUNT_UNBLOCKED:iam.account-unblocked.v1}
+      role-created: ${APP_KAFKA_TOPIC_ROLE_CREATED:iam.role-created.v1}
+      role-updated: ${APP_KAFKA_TOPIC_ROLE_UPDATED:iam.role-updated.v1}
+      role-disabled: ${APP_KAFKA_TOPIC_ROLE_DISABLED:iam.role-disabled.v1}
+      permission-created: ${APP_KAFKA_TOPIC_PERMISSION_CREATED:iam.permission-created.v1}
+      permission-updated: ${APP_KAFKA_TOPIC_PERMISSION_UPDATED:iam.permission-updated.v1}
+      permission-disabled: ${APP_KAFKA_TOPIC_PERMISSION_DISABLED:iam.permission-disabled.v1}
+      permission-granted-to-role: ${APP_KAFKA_TOPIC_PERMISSION_GRANTED_TO_ROLE:iam.permission-granted-to-role.v1}
+      permission-revoked-from-role: ${APP_KAFKA_TOPIC_PERMISSION_REVOKED_FROM_ROLE:iam.permission-revoked-from-role.v1}
   outbox:
     relay:
       enabled: ${APP_OUTBOX_RELAY_ENABLED:true}
       batch-size: ${APP_OUTBOX_RELAY_BATCH_SIZE:200}
       poll-interval-ms: ${APP_OUTBOX_RELAY_POLL_INTERVAL_MS:2000}
       max-retries: ${APP_OUTBOX_RELAY_MAX_RETRIES:3}
+  sessions:
+    expiration:
+      enabled: ${APP_SESSIONS_EXPIRATION_ENABLED:true}
+      sweep-interval-ms: ${APP_SESSIONS_EXPIRATION_SWEEP_INTERVAL_MS:60000}
   idempotency:
     processed-event:
       consumer-name: ${APP_IDEMPOTENCY_CONSUMER_NAME:identity-access-service}

@@ -1,6 +1,6 @@
 # Gateway to Downstream Trust Contract
 
-This document defines the distributed JWT trust model for ArkaB2B.
+This document defines the distributed JWT trust model for Identity Access.
 
 ## 1. Identity-access guarantees
 
@@ -40,8 +40,8 @@ Downstream services consume an already validated access token from Gateway and r
 
 This keeps compatibility with Spring Security:
 
-- `hasRole('ORG_OWNER')`
-- `hasAuthority('iam.user.create')`
+- `hasRole('SYSTEM_ADMIN')`
+- `hasAuthority('iam.account.create')`
 
 Defense-in-depth recommendation:
 
