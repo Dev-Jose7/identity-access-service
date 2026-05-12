@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identity Access Console</title>
+  <link id="consoleFavicon" rel="icon" type="image/svg+xml" href="/console/favicon.svg">
+  <link rel="stylesheet" href="/console/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <span class="brand-mark">IA</span>
+        <div>
+          <h1>Identity Access Console</h1>
+          <p>Dashboard operativo para autenticación, sesiones y RBAC.</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="apiStatus" class="status-pill muted">API sin verificar</span>
+        <a class="top-link" href="/swagger-ui.html" target="_blank" rel="noopener noreferrer">Swagger</a>
+        <a class="top-link" href="/.well-known/jwks.json" target="_blank" rel="noopener noreferrer">JWKS</a>
+        <button id="refreshAllButton" class="btn ghost" type="button">Recargar</button>
+      </div>
+    </header>
+
+    <section class="hero-grid">
+      <article class="hero-card access-card">
+        <div class="card-head">
+          <span class="tag">Sesión</span>
+          <span id="sessionMode" class="chip warn">Sin autenticar</span>
+        </div>
+        <h2 id="principalTitle">Inicia sesión para gestionar IAM</h2>
+        <p id="principalSubtitle">El cliente ajusta navegación y acciones según los permisos presentes en el access token.</p>
+        <div id="principalMeta" class="principal-meta"></div>
+        <div class="hero-actions">
+          <button class="btn primary" type="button" data-open-modal="loginModal">Login</button>
+          <button class="btn" type="button" data-open-modal="primaryRegisterModal">Registrar cuenta primaria</button>
+          <button class="btn" type="button" data-open-modal="publicRegisterModal">Registro público</button>
+          <button id="logoutButton" class="btn danger hidden" type="button">Logout</button>
+        </div>
+      </article>
+
+      <article class="metric-card">
+        <span class="metric-label">Cuentas visibles</span>
+        <strong id="accountsCount">-</strong>
+        <small>Requiere `iam.account.read`</small>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Sesiones visibles</span>
+        <strong id="sessionsCount">-</strong>
+        <small>Requiere `iam.account.read`</small>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Catálogo RBAC</span>
+        <strong id="catalogCount">-</strong>
+        <small>Roles + permisos disponibles</small>
+      </article>
+    </section>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <nav class="nav" aria-label="Secciones IAM">
+          <button class="nav-item active" type="button" data-section="overview">
+            <span>Resumen</span><small>Estado y token</small>
+          </button>
+          <button class="nav-item" type="button" data-section="accounts" data-permission="iam.account.read">
+            <span>Cuentas</span><small>Lectura y gobierno</small>
+          </button>
+          <button class="nav-item" type="button" data-section="sessions" data-permission="iam.account.read">
+            <span>Sesiones</span><small>Operación y revocación</small>
+          </button>
+          <button class="nav-item" type="button" data-section="roles" data-permission="iam.role.read">
+            <span>Roles</span><small>Catálogo de acceso</small>
+          </button>
+          <button class="nav-item" type="button" data-section="permissions" data-permission="iam.permission.read">
+            <span>Permisos</span><small>Capacidades</small>
+          </button>
+          <button class="nav-item" type="button" data-section="introspect">
+            <span>Introspect</span><small>Inspección de tokens</small>
+          </button>
+        </nav>
+        <div class="permission-panel">
+          <h3>Permisos del token</h3>
+          <div id="permissionChips" class="chip-list muted-box">Sin sesión activa.</div>
+        </div>
+      </aside>
+
+      <section class="content">
+        <section id="section-overview" class="section-panel active">
+          <div class="section-head">
+            <div>
+              <span class="tag">Overview</span>
+              <h2>Centro de control</h2>
+              <p>Consulta salud, token actual y accesos disponibles para tu rol.</p>
+            </div>
+          </div>
+
+          <div class="cards-grid two">
+            <article class="panel-card">
+              <h3>Estado del servicio</h3>
+              <div class="kv-grid">
+                <span>Health</span><strong id="healthValue">Pendiente</strong>
+                <span>JWKS</span><strong id="jwksValue">Pendiente</strong>
+                <span>Base URL</span><strong id="baseUrlValue"></strong>
+              </div>
+            </article>
+            <article class="panel-card">
+              <h3>Access token</h3>
+              <div id="tokenDigest" class="token-digest muted-box">No hay token cargado.</div>
+              <div class="row-actions">
+                <button id="refreshTokenButton" class="btn" type="button">Refresh token</button>
+                <button id="copyTokenButton" class="btn ghost" type="button">Copiar access token</button>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel-card">
+            <h3>Mapa de capacidades</h3>
+            <div id="capabilityMap" class="capability-map"></div>
+          </article>
+        </section>
+
+        <section id="section-accounts" class="section-panel">
+          <div class="section-head">
+            <div>
+              <span class="tag">Accounts</span>
+              <h2>Cuentas</h2>
+              <p>Listado administrativo y acciones según permisos del rol autenticado.</p>
+            </div>
+            <div class="section-actions">
+              <button class="btn primary" type="button" data-open-modal="adminCreateModal" data-permission="iam.account.create">Crear cuenta</button>
+              <button class="btn" type="button" data-refresh="accounts">Actualizar</button>
+            </div>
+          </div>
+          <div class="toolbar-line">
+            <input id="accountSearch" class="input" type="search" placeholder="Filtrar por email, estado, rol o ID">
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Estado</th>
+                  <th>Roles</th>
+                  <th>Fallos</th>
+                  <th>Actualizado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="accountsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="section-sessions" class="section-panel">
+          <div class="section-head">
+            <div>
+              <span class="tag">Sessions</span>
+              <h2>Sesiones</h2>
+              <p>Vista operacional de sesiones emitidas y revocaciones administrativas.</p>
+            </div>
+            <button class="btn" type="button" data-refresh="sessions">Actualizar</button>
+          </div>
+          <div class="toolbar-line">
+            <input id="sessionSearch" class="input" type="search" placeholder="Filtrar por sesión, cuenta, estado, IP o dispositivo">
+          </div>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sesión</th>
+                  <th>Cuenta</th>
+                  <th>Estado</th>
+                  <th>IP / Dispositivo</th>
+                  <th>Expiración</th>
+                  <th>Revocación</th>
+                </tr>
+              </thead>
+              <tbody id="sessionsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="section-roles" class="section-panel">
+          <div class="section-head">
+            <div>
+              <span class="tag">RBAC</span>
+              <h2>Roles</h2>
+              <p>Gobierno del catálogo de roles y permisos concedidos.</p>
+            </div>
+            <div class="section-actions">
+              <button class="btn primary" type="button" data-open-modal="roleModal" data-permission="iam.role.create">Crear rol</button>
+              <button class="btn" type="button" data-refresh="roles">Actualizar</button>
+            </div>
+          </div>
+          <div class="toolbar-line">
+            <input id="roleSearch" class="input" type="search" placeholder="Filtrar por código, descripción, estado o ID">
+          </div>
+          <div id="rolesGrid" class="role-grid"></div>
+        </section>
+
+        <section id="section-permissions" class="section-panel">
+          <div class="section-head">
+            <div>
+              <span class="tag">Permissions</span>
+              <h2>Permisos</h2>
+              <p>Catálogo de capacidades atómicas disponibles para roles.</p>
+            </div>
+            <div class="section-actions">
+              <button class="btn primary" type="button" data-open-modal="permissionModal" data-permission="iam.permission.create">Crear permiso</button>
+              <button class="btn" type="button" data-refresh="permissions">Actualizar</button>
+            </div>
+          </div>
+          <div class="toolbar-line">
+            <input id="permissionSearch" class="input" type="search" placeholder="Filtrar por código, recurso o acción">
+          </div>
+          <div id="permissionsGrid" class="permission-grid"></div>
+        </section>
+
+        <section id="section-introspect" class="section-panel">
+          <div class="section-head">
+            <div>
+              <span class="tag">Token tools</span>
+              <h2>Introspect</h2>
+              <p>Inspecciona cualquier token emitido por el servicio.</p>
+            </div>
+          </div>
+          <article class="panel-card">
+            <textarea id="introspectToken" class="textarea" rows="5" placeholder="Pega aquí el access token o refresh token"></textarea>
+            <div class="row-actions">
+              <button id="introspectButton" class="btn primary" type="button">Introspectar</button>
+              <button id="useCurrentTokenButton" class="btn" type="button">Usar access token actual</button>
+            </div>
+            <pre id="introspectOutput" class="code-box">Sin resultado.</pre>
+          </article>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <dialog id="loginModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="login">
+      <header><h3>Login</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Email<input class="input" name="email" type="email" required value="primary.admin@example.com"></label>
+      <label>Password<input class="input" name="password" type="password" required minlength="8" value="ChangeMe123!"></label>
+      <footer><button class="btn primary" type="submit">Entrar</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="primaryRegisterModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="register-primary">
+      <header><h3>Registrar cuenta primaria</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <p class="modal-copy">Solo debe ejecutarse en un ambiente limpio. Crea el rol exclusivo `SYSTEM_ADMIN`.</p>
+      <label>Email<input class="input" name="email" type="email" required value="primary.admin@example.com"></label>
+      <label>Password<input class="input" name="password" type="password" required minlength="8" value="ChangeMe123!"></label>
+      <footer><button class="btn primary" type="submit">Crear primaria</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="publicRegisterModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="register-public">
+      <header><h3>Registro público</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Email<input class="input" name="email" type="email" required value="public.user@example.com"></label>
+      <label>Password<input class="input" name="password" type="password" required minlength="8" value="ChangeMe123!"></label>
+      <footer><button class="btn primary" type="submit">Registrar</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="adminCreateModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="admin-create">
+      <header><h3>Crear cuenta administrativa</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Email<input class="input" name="email" type="email" required value="operator@example.com"></label>
+      <label>Password<input class="input" name="password" type="password" required minlength="8" value="ChangeMe123!"></label>
+      <label>Rol inicial<select class="select" name="roleCode" data-role-select data-optional-label="Por defecto: ACCOUNT_USER"></select></label>
+      <footer><button class="btn primary" type="submit">Crear cuenta</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="assignRoleModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="assign-role">
+      <header><h3>Asignar rol</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="userId">
+      <label>Cuenta<input class="input" name="email" readonly></label>
+      <label>Rol<select class="select" name="roleCode" required data-role-select></select></label>
+      <footer><button class="btn primary" type="submit">Asignar</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="blockAccountModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="block-account">
+      <header><h3>Bloquear cuenta</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="userId">
+      <label>Cuenta<input class="input" name="email" readonly></label>
+      <label>Razón<input class="input" name="reason" value="Security review"></label>
+      <footer><button class="btn danger" type="submit">Bloquear</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="unblockAccountModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="unblock-account">
+      <header><h3>Desbloquear cuenta</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="userId">
+      <label>Cuenta<input class="input" name="email" readonly></label>
+      <label>Razón<input class="input" name="reason" value="Administrative unblock"></label>
+      <footer><button class="btn primary" type="submit">Desbloquear</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="revokeSessionsModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="revoke-sessions">
+      <header><h3>Revocar sesiones</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="userId">
+      <label>Cuenta<input class="input" name="email" readonly></label>
+      <label>Razón<input class="input" name="reason" value="Administrative revocation"></label>
+      <footer><button class="btn danger" type="submit">Revocar</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="roleModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="create-role">
+      <header><h3>Crear rol</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Código<input class="input" name="roleCode" required placeholder="SUPPORT_AGENT"></label>
+      <label>Descripción<input class="input" name="description" required placeholder="Support agent role"></label>
+      <label class="check-row"><input name="protectedRole" type="checkbox"> Rol protegido</label>
+      <footer><button class="btn primary" type="submit">Crear rol</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="editRoleModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="edit-role">
+      <header><h3>Editar rol</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="roleId">
+      <label>Código<input class="input" name="roleCode" readonly></label>
+      <label>Descripción<input class="input" name="description" required placeholder="Descripción del rol"></label>
+      <footer><button class="btn primary" type="submit">Guardar cambios</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="permissionModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="create-permission">
+      <header><h3>Crear permiso</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Código<input class="input" name="permissionCode" required placeholder="support.ticket.read"></label>
+      <label>Recurso<input class="input" name="resource" required placeholder="support.ticket"></label>
+      <label>Acción<input class="input" name="action" required placeholder="read"></label>
+      <label>Scope<input class="input" name="scope" value="GLOBAL"></label>
+      <label>Descripción<input class="input" name="description" required placeholder="Read support tickets"></label>
+      <label class="check-row"><input name="systemPermission" type="checkbox"> Permiso de sistema</label>
+      <footer><button class="btn primary" type="submit">Crear permiso</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="editPermissionModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="edit-permission">
+      <header><h3>Editar permiso</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <input type="hidden" name="permissionId">
+      <label>Código<input class="input" name="permissionCode" readonly></label>
+      <label>Recurso<input class="input" name="resource" required placeholder="support.ticket"></label>
+      <label>Acción<input class="input" name="action" required placeholder="read"></label>
+      <label>Scope<input class="input" name="scope" value="GLOBAL"></label>
+      <label>Descripción<input class="input" name="description" required placeholder="Read support tickets"></label>
+      <footer><button class="btn primary" type="submit">Guardar cambios</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="grantPermissionModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="grant-permission">
+      <header><h3>Conceder permiso a rol</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <label>Rol<select class="select" name="roleId" required data-role-id-select></select></label>
+      <label>Permiso<select class="select" name="permissionCode" required data-permission-select></select></label>
+      <footer><button class="btn primary" type="submit">Conceder</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="accountDetailsModal" class="modal">
+    <article class="modal-card details-card">
+      <header><h3>Detalle de cuenta</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <div id="accountDetailsBody" class="detail-grid"></div>
+    </article>
+  </dialog>
+
+  <dialog id="accessDetailsModal" class="modal wide">
+    <article class="modal-card details-card">
+      <header>
+        <div>
+          <h3 id="accessDetailsTitle">Permisos</h3>
+          <p id="accessDetailsSubtitle" class="modal-copy"></p>
+        </div>
+        <button class="icon-btn" data-close-modal type="button">×</button>
+      </header>
+      <div id="accessDetailsBody" class="detail-grid"></div>
+    </article>
+  </dialog>
+
+  <dialog id="confirmActionModal" class="modal">
+    <form method="dialog" class="modal-card" data-form="confirm-action">
+      <header><h3 id="confirmActionTitle">Confirmar acción</h3><button class="icon-btn" data-close-modal type="button">×</button></header>
+      <p id="confirmActionMessage" class="modal-copy">Confirma si deseas continuar.</p>
+      <footer><button id="confirmActionButton" class="btn danger" type="submit">Confirmar</button></footer>
+    </form>
+  </dialog>
+
+  <script src="/console/app.js"></script>
+</body>
+</html>

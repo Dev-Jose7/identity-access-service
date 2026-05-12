@@ -27,3 +27,12 @@ spring:
       group-id: ${APP_LOCAL_KAFKA_CONSUMER_GROUP_ID:identity-access-service-local}
       auto-offset-reset: ${APP_LOCAL_KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
       enable-auto-commit: ${APP_LOCAL_KAFKA_CONSUMER_ENABLE_AUTO_COMMIT:false}
+
+app:
+  database:
+    schema:
+      initialize-on-startup: ${APP_DATABASE_SCHEMA_INITIALIZE_ON_STARTUP:true}
+  security:
+    jwt:
+      private-key-path: ${APP_SECURITY_JWT_PRIVATE_KEY_PATH:classpath:keys/dev-private.pem}
+      public-key-path: ${APP_SECURITY_JWT_PUBLIC_KEY_PATH:classpath:keys/dev-public.pem}

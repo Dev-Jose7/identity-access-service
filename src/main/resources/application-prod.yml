@@ -31,5 +31,10 @@ spring:
 app:
   security:
     jwt:
+      algorithm: ${APP_SECURITY_JWT_ALGORITHM}
+      key-id: ${APP_SECURITY_JWT_KEY_ID}
+      private-key-path: ${APP_SECURITY_JWT_PRIVATE_KEY_PATH}
+      public-key-path: ${APP_SECURITY_JWT_PUBLIC_KEY_PATH}
+      additional-public-keys: ${APP_SECURITY_JWT_ADDITIONAL_PUBLIC_KEYS:}
       issuer: ${APP_SECURITY_JWT_ISSUER}
       audience: ${APP_SECURITY_JWT_AUDIENCE}

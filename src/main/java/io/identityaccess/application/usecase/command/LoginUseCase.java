@@ -1,0 +1,175 @@
+package io.identityaccess.application.usecase.command;
+
+import io.identityaccess.application.command.LoginCommand;
+import io.identityaccess.application.mapper.command.LoginCommandAssembler;
+import io.identityaccess.application.mapper.result.LoginResultMapper;
+import io.identityaccess.application.port.in.LoginCommandUseCase;
+import io.identityaccess.application.port.out.audit.SecurityAuditPort;
+import io.identityaccess.application.port.out.cache.SecurityRateLimitPort;
+import io.identityaccess.application.port.out.external.ClockPort;
+import io.identityaccess.application.port.out.persistence.OutboxPersistencePort;
+import io.identityaccess.application.port.out.persistence.SessionPersistencePort;
+import io.identityaccess.application.port.out.persistence.UserPersistencePort;
+import io.identityaccess.application.port.out.security.JwtSigningPort;
+import io.identityaccess.application.port.out.security.PasswordHashPort;
+import io.identityaccess.application.result.LoginResult;
+import io.identityaccess.domain.exception.DomainException;
+import io.identityaccess.domain.exception.InvalidCredentialsException;
+import io.identityaccess.domain.exception.UserNotEnabledException;
+import io.identityaccess.domain.model.session.SessionAggregate;
+import io.identityaccess.domain.model.session.valueobject.ClientDevice;
+import io.identityaccess.domain.model.session.valueobject.ClientIp;
+import io.identityaccess.domain.model.user.UserAggregate;
+import io.identityaccess.domain.model.user.entity.UserLoginAttempt;
+import io.identityaccess.domain.model.user.event.AccountAuthenticationFailedEvent;
+import io.identityaccess.domain.model.user.valueobject.EmailAddress;
+import io.identityaccess.domain.model.user.valueobject.UserId;
+import io.identityaccess.domain.service.PasswordPolicy;
+import io.identityaccess.domain.service.SessionPolicy;
+import io.identityaccess.domain.service.TokenPolicy;
+import java.time.Instant;
+import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+
+@Service
+public class LoginUseCase implements LoginCommandUseCase {
+
+    private final LoginCommandAssembler loginCommandAssembler;
+    private final SecurityRateLimitPort securityRateLimitPort;
+    private final UserPersistencePort userPersistencePort;
+    private final PasswordHashPort passwordHashPort;
+    private final ClockPort clockPort;
+    private final SessionPolicy sessionPolicy;
+    private final TokenPolicy tokenPolicy;
+    private final SessionPersistencePort sessionPersistencePort;
+    private final JwtSigningPort jwtSigningPort;
+    private final SecurityAuditPort securityAuditPort;
+    private final OutboxPersistencePort outboxPersistencePort;
+    private final LoginResultMapper loginResultMapper;
+    private final PasswordPolicy passwordPolicy;
+
+    public LoginUseCase(LoginCommandAssembler loginCommandAssembler, SecurityRateLimitPort securityRateLimitPort, UserPersistencePort userPersistencePort, PasswordHashPort passwordHashPort, ClockPort clockPort, SessionPolicy sessionPolicy, TokenPolicy tokenPolicy, SessionPersistencePort sessionPersistencePort, JwtSigningPort jwtSigningPort, SecurityAuditPort securityAuditPort, OutboxPersistencePort outboxPersistencePort, LoginResultMapper loginResultMapper, PasswordPolicy passwordPolicy) {
+        this.loginCommandAssembler = loginCommandAssembler;
+        this.securityRateLimitPort = securityRateLimitPort;
+        this.userPersistencePort = userPersistencePort;
+        this.passwordHashPort = passwordHashPort;
+        this.clockPort = clockPort;
+        this.sessionPolicy = sessionPolicy;
+        this.tokenPolicy = tokenPolicy;
+        this.sessionPersistencePort = sessionPersistencePort;
+        this.jwtSigningPort = jwtSigningPort;
+        this.securityAuditPort = securityAuditPort;
+        this.outboxPersistencePort = outboxPersistencePort;
+        this.loginResultMapper = loginResultMapper;
+        this.passwordPolicy = passwordPolicy;
+    }
+
+    @Override
+    public Mono<LoginResult> handle(LoginCommand command) {
+        passwordPolicy.ensureRawPasswordProvided(command.rawPassword());
+        EmailAddress email = loginCommandAssembler.toEmailAddress(command);
+        ClientDevice clientDevice = loginCommandAssembler.toClientDevice(command);
+        ClientIp clientIp = loginCommandAssembler.toClientIp(command);
+
+        return securityRateLimitPort
+                .ensureLoginAllowed(email, clientIp)
+                .then(Mono.defer(() -> userPersistencePort.loadForLogin(email)
+                        .onErrorResume(InvalidCredentialsException.class, exception ->
+                                recordAuthenticationFailure(
+                                        email,
+                                        null,
+                                        clientDevice,
+                                        clientIp,
+                                        "INVALID_CREDENTIALS",
+                                        clockPort.now(),
+                                        null)
+                                        .then(Mono.error(exception)))))
+                .flatMap(user -> authenticateAndOpenSession(user, command.rawPassword(), clientDevice, clientIp))
+                .flatMap(context -> sessionPersistencePort.create(context.session()).map(savedSession -> new MaterializedLoginContext(context.user(), savedSession)))
+                .flatMap(context -> userPersistencePort.loadAuthorizationSnapshot(context.user().id())
+                        .flatMap(snapshot -> Mono.zip(
+                                        jwtSigningPort.signAccessToken(
+                                                context.session(),
+                                                snapshot.email(),
+                                                snapshot.roles(),
+                                                snapshot.permissions()),
+                                        jwtSigningPort.signRefreshToken(context.session()))
+                                .flatMap(tokens -> securityAuditPort.recordLoginSuccess(context.user(), context.session())
+                                        .then(outboxPersistencePort.store(context.session().domainEvent()))
+                                        .thenReturn(loginResultMapper.toResult(context.session(), tokens.getT1(), tokens.getT2())))));
+    }
+
+    private Mono<AuthenticatedLoginContext> authenticateAndOpenSession(UserAggregate user, String rawPassword, ClientDevice clientDevice, ClientIp clientIp) {
+        return passwordHashPort.matches(rawPassword, user.credential().passwordHash())
+                .flatMap(passwordMatches -> {
+                    Instant now = clockPort.now();
+                    try {
+                        user.authenticate(passwordMatches, passwordPolicy, clientIp, now);
+                    } catch (DomainException exception) {
+                        UserLoginAttempt failedAttempt = failedAttemptFor(user, clientIp, now);
+                        return recordAuthenticationFailure(
+                                user.email(),
+                                user.id(),
+                                clientDevice,
+                                clientIp,
+                                failureReason(exception),
+                                now,
+                                failedAttempt)
+                                .then(Mono.error(exception));
+                    }
+                    SessionAggregate session = SessionAggregate.open(user, clientDevice, clientIp, now, sessionPolicy, tokenPolicy);
+                    return userPersistencePort.recordLoginAttempt(user.lastAttempt())
+                            .thenReturn(new AuthenticatedLoginContext(user, session));
+                });
+    }
+
+    private Mono<Void> recordAuthenticationFailure(
+            EmailAddress email,
+            UserId userId,
+            ClientDevice clientDevice,
+            ClientIp clientIp,
+            String failureReason,
+            Instant occurredAt,
+            UserLoginAttempt failedAttempt) {
+        Mono<Void> attemptWrite = failedAttempt == null
+                ? Mono.empty()
+                : userPersistencePort.recordLoginAttempt(failedAttempt);
+
+        return attemptWrite
+                .then(securityAuditPort.recordLoginFailure(
+                        email,
+                        userId,
+                        clientIp,
+                        clientDevice,
+                        failureReason,
+                        occurredAt))
+                .then(outboxPersistencePort.store(AccountAuthenticationFailedEvent.create(
+                        email,
+                        userId,
+                        clientIp,
+                        failureReason,
+                        occurredAt)))
+                .then();
+    }
+
+    private UserLoginAttempt failedAttemptFor(UserAggregate user, ClientIp clientIp, Instant now) {
+        UserLoginAttempt lastAttempt = user.lastAttempt();
+        if (lastAttempt != null && !lastAttempt.success() && now.equals(lastAttempt.occurredAt())) {
+            return lastAttempt;
+        }
+        return UserLoginAttempt.failed(user.id(), clientIp, now);
+    }
+
+    private String failureReason(DomainException exception) {
+        if (exception instanceof UserNotEnabledException) {
+            return "ACCOUNT_NOT_ENABLED";
+        }
+        if (exception instanceof InvalidCredentialsException) {
+            return "INVALID_CREDENTIALS";
+        }
+        return exception.errorCode();
+    }
+
+    private record AuthenticatedLoginContext(UserAggregate user, SessionAggregate session) {}
+    private record MaterializedLoginContext(UserAggregate user, SessionAggregate session) {}
+}

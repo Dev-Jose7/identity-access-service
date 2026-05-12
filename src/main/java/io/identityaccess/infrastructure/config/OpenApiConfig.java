@@ -1,0 +1,40 @@
+package io.identityaccess.infrastructure.config;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.info.Contact;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiConfig {
+
+    private static final String BEARER_AUTH_SCHEME = "bearerAuth";
+
+    @Bean
+    public OpenAPI identityAccessOpenApi(@Value("${app.version:1.0.0}") String appVersion) {
+        return new OpenAPI()
+                .components(new Components().addSecuritySchemes(
+                        BEARER_AUTH_SCHEME,
+                        new SecurityScheme()
+                                .type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer")
+                                .bearerFormat("JWT")
+                                .in(SecurityScheme.In.HEADER)
+                                .name("Authorization")))
+                .addSecurityItem(new SecurityRequirement().addList(BEARER_AUTH_SCHEME))
+                .info(new Info()
+                        .title("Identity Access Service API")
+                        .description("Reactive API for authentication, session lifecycle and IAM administration in Identity Access")
+                        .version(appVersion)
+                        .contact(new Contact().name("Identity Access Platform Team"))
+                        .license(new License()
+                                .name("Elastic License 2.0")
+                                .url("https://spdx.org/licenses/Elastic-2.0.html")));
+    }
+}

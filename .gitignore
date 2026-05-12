@@ -4,6 +4,7 @@
 # Gradle
 .gradle/
 build/
+bin/
 
 # IDE
 .idea/
@@ -20,5 +21,3 @@ build/
 .env
 
 # Docs
-/content
-/prompt-pack
