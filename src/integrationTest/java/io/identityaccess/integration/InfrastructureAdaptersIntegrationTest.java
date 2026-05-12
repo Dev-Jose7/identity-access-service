@@ -12,6 +12,7 @@ import io.identityaccess.application.port.out.persistence.OutboxPersistencePort;
 import io.identityaccess.application.port.out.persistence.SessionPersistencePort;
 import io.identityaccess.application.port.out.persistence.UserPersistencePort;
 import io.identityaccess.application.service.OutboxEventRelayPublisher;
+import io.identityaccess.domain.event.DomainEvent;
 import io.identityaccess.domain.exception.ExclusiveRoleAlreadyAssignedException;
 import io.identityaccess.domain.exception.OperationNotPermittedException;
 import io.identityaccess.domain.exception.PrimaryAccountAlreadyExistsException;
@@ -34,6 +35,7 @@ import io.identityaccess.infrastructure.adapter.out.persistence.repository.React
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -376,7 +378,7 @@ class InfrastructureAdaptersIntegrationTest {
                 Instant.parse("2026-01-01T00:00:00Z"));
 
         StepVerifier.create(outboxPersistencePort.store(event)
-                        .then(outboxEventRelayPublisher.publishPending(10))
+                        .then(outboxEventRelayPublisher.publishPending(10, 3))
                         .then(reactiveOutboxEventRepository.findById(event.eventId())))
                 .assertNext(row -> assertEquals("PUBLISHED", row.status()))
                 .verifyComplete();
@@ -384,6 +386,21 @@ class InfrastructureAdaptersIntegrationTest {
         ConsumerRecord<String, String> record = consumeOne("iam.account-registered.v1", accountId);
         assertEquals(accountId, record.key());
         assertTrue(record.value().contains(accountId));
+    }
+
+    @Test
+    void outboxRelayShouldPersistFailureMetadataWhenPublicationFails() {
+        DomainEvent event = unmappedEvent();
+
+        StepVerifier.create(outboxPersistencePort.store(event)
+                        .then(outboxEventRelayPublisher.publishPending(10, 1))
+                        .then(reactiveOutboxEventRepository.findById(event.eventId())))
+                .assertNext(row -> {
+                    assertEquals("FAILED", row.status());
+                    assertEquals(1, row.retryCount());
+                    assertTrue(row.lastError().contains("No Kafka topic mapping"));
+                })
+                .verifyComplete();
     }
 
     @Test
@@ -486,5 +503,37 @@ class InfrastructureAdaptersIntegrationTest {
             }
         }
         return fail("No Kafka record consumed from topic " + topic + " with key " + expectedKey);
+    }
+
+    private DomainEvent unmappedEvent() {
+        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        return new DomainEvent() {
+            private final String eventId = "evt-unmapped-" + UUID.randomUUID();
+
+            @Override
+            public String eventId() {
+                return eventId;
+            }
+
+            @Override
+            public String eventType() {
+                return "UnmappedIntegrationEvent";
+            }
+
+            @Override
+            public Instant occurredAt() {
+                return now;
+            }
+
+            @Override
+            public String aggregateId() {
+                return "aggregate-unmapped";
+            }
+
+            @Override
+            public Map<String, Object> payload() {
+                return Map.of("eventId", eventId);
+            }
+        };
     }
 }

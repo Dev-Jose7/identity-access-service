@@ -1,7 +1,11 @@
 package io.identityaccess.infrastructure.adapter.out.persistence.mapper;
 
 import io.identityaccess.domain.model.session.SessionAggregate;
+import io.identityaccess.domain.model.session.valueobject.ClientDevice;
+import io.identityaccess.domain.model.session.valueobject.ClientIp;
 import io.identityaccess.domain.model.user.UserAggregate;
+import io.identityaccess.domain.model.user.valueobject.EmailAddress;
+import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.infrastructure.adapter.out.persistence.entity.AuthAuditRow;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +32,26 @@ public class AuthAuditRowMapper {
                 session.clientDevice().deviceId(),
                 "SUCCESS",
                 Map.of("sessionId", session.id().value(), "accessJti", session.accessJti().value()));
+    }
+
+    public AuthAuditRow toLoginFailureRow(
+            EmailAddress email,
+            UserId userId,
+            ClientIp clientIp,
+            ClientDevice clientDevice,
+            String failureReason,
+            Instant occurredAt) {
+        return row(
+                "LOGIN_FAILURE",
+                userId == null ? null : userId.value(),
+                null,
+                clientIp == null ? null : clientIp.value(),
+                clientDevice == null ? null : clientDevice.deviceId(),
+                "FAILURE",
+                Map.of(
+                        "email", email == null ? "" : email.value(),
+                        "failureReason", normalize(failureReason)),
+                occurredAt);
     }
 
     public AuthAuditRow toRegisterRow(UserAggregate user) {
@@ -152,6 +176,27 @@ public class AuthAuditRowMapper {
                 result,
                 toJson(payload),
                 Instant.now());
+    }
+
+    private AuthAuditRow row(
+            String eventType,
+            String userId,
+            String sessionId,
+            String ipAddress,
+            String deviceId,
+            String result,
+            Map<String, Object> payload,
+            Instant occurredAt) {
+        return new AuthAuditRow(
+                UUID.randomUUID().toString(),
+                eventType,
+                userId,
+                sessionId,
+                ipAddress,
+                deviceId,
+                result,
+                toJson(payload),
+                occurredAt == null ? Instant.now() : occurredAt);
     }
 
     private String toJson(Map<String, Object> payload) {

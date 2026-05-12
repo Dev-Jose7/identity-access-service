@@ -238,6 +238,7 @@ Cuando se supera el límite, el servicio responde HTTP `429 Too Many Requests`.
 ### Kafka y outbox
 
 Las mutaciones relevantes se guardan en `outbox_event` y el relay publica eventos hacia Kafka.
+Los fallos de autenticación se publican como `AccountAuthenticationFailed` hacia `APP_KAFKA_TOPIC_AUTH_FAILED` sin incluir contraseñas, hashes ni tokens.
 
 Variables principales:
 
@@ -796,6 +797,7 @@ When the threshold is exceeded, the service responds with HTTP `429 Too Many Req
 ### Kafka and outbox
 
 Relevant mutations are stored in `outbox_event`, and the relay publishes events to Kafka.
+Authentication failures are published as `AccountAuthenticationFailed` to `APP_KAFKA_TOPIC_AUTH_FAILED` without passwords, hashes, or tokens.
 
 Main variables:
 

@@ -32,7 +32,6 @@ import io.identityaccess.domain.model.session.valueobject.SessionTimestamps;
 import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.domain.service.SessionPolicy;
 import io.identityaccess.domain.service.TokenPolicy;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
@@ -98,7 +97,7 @@ class RefreshSessionUseCaseTest {
 
         when(securityRateLimitPort.ensureRefreshAllowed(any(), any())).thenReturn(Mono.empty());
         when(sessionPersistencePort.expireExpiredSessions(now)).thenReturn(Mono.just(0L));
-        when(assembler.toRefreshJti(any())).thenReturn(RefreshJti.of("ref-old"));
+        when(assembler.toRefreshJti(any())).thenReturn(Mono.just(RefreshJti.of("ref-old")));
         when(sessionPersistencePort.findActiveByRefreshJti(any())).thenReturn(Mono.just(activeSession));
         when(clockPort.now()).thenReturn(now);
         when(sessionPersistencePort.update(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
@@ -110,19 +109,7 @@ class RefreshSessionUseCaseTest {
         when(jwtSigningPort.signAccessToken(any(), any(), any(), any())).thenReturn(Mono.just("access-new"));
         when(jwtSigningPort.signRefreshToken(any())).thenReturn(Mono.just("refresh-new"));
         when(securityAuditPort.recordSessionRefreshed(any())).thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(new OutboxEventRow(
-                "evt-2",
-                "Session",
-                "ses-1",
-                "SessionRefreshed",
-                "{}",
-                "PENDING",
-                now,
-                null,
-                0,
-                null,
-                now,
-                now)));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         TokenPairResult result = useCase.handle(new RefreshSessionCommand("any-refresh-token")).block();
 

@@ -1,6 +1,6 @@
 package io.identityaccess.infrastructure.adapter.out.event;
 
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
+import io.identityaccess.application.port.out.persistence.OutboxPersistencePort.PendingOutboxEvent;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -9,6 +9,7 @@ public class DomainEventKafkaMapper {
 
     private final String sessionOpenedTopic;
     private final String accountRegisteredTopic;
+    private final String accountAuthenticationFailedTopic;
     private final String sessionRefreshedTopic;
     private final String sessionRevokedTopic;
     private final String roleAssignedToAccountTopic;
@@ -26,6 +27,7 @@ public class DomainEventKafkaMapper {
     public DomainEventKafkaMapper(
             @Value("${app.kafka.topics.session-opened:iam.session-opened.v1}") String sessionOpenedTopic,
             @Value("${app.kafka.topics.account-registered:iam.account-registered.v1}") String accountRegisteredTopic,
+            @Value("${app.kafka.topics.auth-failed:iam.auth-failed.v1}") String accountAuthenticationFailedTopic,
             @Value("${app.kafka.topics.session-refreshed:iam.session-refreshed.v1}") String sessionRefreshedTopic,
             @Value("${app.kafka.topics.session-revoked:iam.session-revoked.v1}") String sessionRevokedTopic,
             @Value("${app.kafka.topics.role-assigned-to-account:iam.role-assigned-to-account.v1}") String roleAssignedToAccountTopic,
@@ -41,6 +43,7 @@ public class DomainEventKafkaMapper {
             @Value("${app.kafka.topics.permission-revoked-from-role:iam.permission-revoked-from-role.v1}") String permissionRevokedFromRoleTopic) {
         this.sessionOpenedTopic = sessionOpenedTopic;
         this.accountRegisteredTopic = accountRegisteredTopic;
+        this.accountAuthenticationFailedTopic = accountAuthenticationFailedTopic;
         this.sessionRefreshedTopic = sessionRefreshedTopic;
         this.sessionRevokedTopic = sessionRevokedTopic;
         this.roleAssignedToAccountTopic = roleAssignedToAccountTopic;
@@ -56,10 +59,11 @@ public class DomainEventKafkaMapper {
         this.permissionRevokedFromRoleTopic = permissionRevokedFromRoleTopic;
     }
 
-    public String topicFor(OutboxEventRow row) {
-        return switch (row.eventType()) {
+    public String topicFor(PendingOutboxEvent event) {
+        return switch (event.eventType()) {
             case "SessionOpened" -> sessionOpenedTopic;
             case "AccountRegistered" -> accountRegisteredTopic;
+            case "AccountAuthenticationFailed" -> accountAuthenticationFailedTopic;
             case "SessionRefreshed" -> sessionRefreshedTopic;
             case "SessionRevoked" -> sessionRevokedTopic;
             case "RoleAssignedToAccount" -> roleAssignedToAccountTopic;
@@ -73,10 +77,10 @@ public class DomainEventKafkaMapper {
             case "PermissionDisabled" -> permissionDisabledTopic;
             case "PermissionGrantedToRole" -> permissionGrantedToRoleTopic;
             case "PermissionRevokedFromRole" -> permissionRevokedFromRoleTopic;
-            default -> throw new IllegalStateException("No Kafka topic mapping for domain event type: " + row.eventType());
+            default -> throw new IllegalStateException("No Kafka topic mapping for domain event type: " + event.eventType());
         };
     }
 
-    public String keyFor(OutboxEventRow row) { return row.aggregateId(); }
-    public String payloadFor(OutboxEventRow row) { return row.payload(); }
+    public String keyFor(PendingOutboxEvent event) { return event.aggregateId(); }
+    public String payloadFor(PendingOutboxEvent event) { return event.payload(); }
 }

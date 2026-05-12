@@ -30,7 +30,6 @@ import io.identityaccess.domain.model.user.RegistrationMode;
 import io.identityaccess.domain.model.user.UserAggregate;
 import io.identityaccess.domain.model.user.valueobject.EmailAddress;
 import io.identityaccess.domain.service.UserRegistrationPolicy;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Instant;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -80,7 +79,7 @@ class RegisterUseCaseTest {
         when(userPersistencePort.create(any(), eq("ACCOUNT_USER"), eq("SYSTEM_REGISTRATION"))).thenReturn(Mono.just(created));
         when(securityAuditPort.recordAccountRegistered(any())).thenReturn(Mono.empty());
         when(clockPort.now()).thenReturn(NOW);
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(outboxRow(created, "evt-public")));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         RegisterResult result = useCase.handle(command).block();
 
@@ -109,7 +108,7 @@ class RegisterUseCaseTest {
         when(userPersistencePort.create(any(), eq("SYSTEM_ADMIN"), eq("SYSTEM_PRIMARY_REGISTRATION"))).thenReturn(Mono.just(created));
         when(securityAuditPort.recordAccountRegistered(any())).thenReturn(Mono.empty());
         when(clockPort.now()).thenReturn(NOW);
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(outboxRow(created, "evt-primary")));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         RegisterResult result = useCase.handle(command).block();
 
@@ -165,7 +164,7 @@ class RegisterUseCaseTest {
         when(userPersistencePort.create(any(), eq("ACCOUNT_USER"), eq("owner-1"))).thenReturn(Mono.just(created));
         when(securityAuditPort.recordAccountRegistered(any())).thenReturn(Mono.empty());
         when(clockPort.now()).thenReturn(NOW);
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(outboxRow(created, "evt-admin")));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         RegisterResult result = useCase.handle(command).block();
 
@@ -210,21 +209,5 @@ class RegisterUseCaseTest {
                 actorId,
                 "JUnit",
                 "127.0.0.1");
-    }
-
-    private OutboxEventRow outboxRow(UserAggregate created, String eventId) {
-        return new OutboxEventRow(
-                eventId,
-                "Account",
-                created.id().value(),
-                "AccountRegistered",
-                "{}",
-                "PENDING",
-                NOW,
-                null,
-                0,
-                null,
-                NOW,
-                NOW);
     }
 }

@@ -336,6 +336,7 @@ Esto es útil porque un token puede ser criptográficamente válido, pero no est
 Si tu sistema consume eventos, Kafka recibe hechos como:
 
 - `iam.account-registered.v1`
+- `iam.auth-failed.v1`
 - `iam.session-opened.v1`
 - `iam.session-refreshed.v1`
 - `iam.session-revoked.v1`

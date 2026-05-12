@@ -1,12 +1,25 @@
 package io.identityaccess.application.port.out.audit;
 
 import io.identityaccess.domain.model.session.SessionAggregate;
+import io.identityaccess.domain.model.session.valueobject.ClientDevice;
+import io.identityaccess.domain.model.session.valueobject.ClientIp;
 import io.identityaccess.domain.model.user.UserAggregate;
+import io.identityaccess.domain.model.user.valueobject.EmailAddress;
+import io.identityaccess.domain.model.user.valueobject.UserId;
+import java.time.Instant;
 import reactor.core.publisher.Mono;
 
 public interface SecurityAuditPort {
 
     Mono<Void> recordLoginSuccess(UserAggregate user, SessionAggregate session);
+
+    Mono<Void> recordLoginFailure(
+            EmailAddress email,
+            UserId userId,
+            ClientIp clientIp,
+            ClientDevice clientDevice,
+            String failureReason,
+            Instant occurredAt);
 
     Mono<Void> recordAccountRegistered(UserAggregate user);
 

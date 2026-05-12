@@ -17,7 +17,6 @@ import io.identityaccess.application.port.out.persistence.UserPersistencePort;
 import io.identityaccess.application.result.UnblockUserResult;
 import io.identityaccess.application.usecase.command.UnblockUserUseCase;
 import io.identityaccess.domain.exception.OperationNotPermittedException;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,19 +51,7 @@ class UnblockUserUseCaseTest {
         when(userPersistencePort.unblock(any(), eq(now)))
                 .thenReturn(Mono.just(new UserPersistencePort.UserStatusSnapshot("usr-10", "user@example.test", "ACTIVE")));
         when(securityAuditPort.recordAccountUnblocked("actor-1", "usr-10", "review-complete", true)).thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(new OutboxEventRow(
-                "evt-unblock-1",
-                "User",
-                "usr-10",
-                "AccountUnblocked",
-                "{}",
-                "PENDING",
-                now,
-                null,
-                0,
-                null,
-                now,
-                now)));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         UnblockUserResult result = useCase.handle(command).block();
 

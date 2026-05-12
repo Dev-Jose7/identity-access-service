@@ -18,7 +18,6 @@ import io.identityaccess.application.port.out.persistence.UserPersistencePort;
 import io.identityaccess.application.result.BlockUserResult;
 import io.identityaccess.application.usecase.command.BlockUserUseCase;
 import io.identityaccess.domain.exception.OperationNotPermittedException;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,19 +60,7 @@ class BlockUserUseCaseTest {
         when(sessionPersistencePort.revokeActiveSessionsByUserId(any(), eq("ACCOUNT_BLOCKED"), eq(now)))
                 .thenReturn(Mono.just(2L));
         when(securityAuditPort.recordSessionsRevoked("actor-1", "usr-10", "ACCOUNT_BLOCKED", 2L)).thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(new OutboxEventRow(
-                "evt-block-1",
-                "User",
-                "usr-10",
-                "AccountBlocked",
-                "{}",
-                "PENDING",
-                now,
-                null,
-                0,
-                null,
-                now,
-                now)));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         BlockUserResult result = useCase.handle(command).block();
 

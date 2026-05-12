@@ -67,7 +67,7 @@ public class RefreshSessionUseCase implements RefreshSessionCommandUseCase {
                 .then(Mono.defer(() -> {
                     var now = clockPort.now();
                     return sessionPersistencePort.expireExpiredSessions(now)
-                            .then(Mono.fromSupplier(() -> assembler.toRefreshJti(command)))
+                            .then(assembler.toRefreshJti(command))
                             .flatMap(sessionPersistencePort::findActiveByRefreshJti)
                             .map(session -> session.refresh(now, sessionPolicy, tokenPolicy));
                 }))

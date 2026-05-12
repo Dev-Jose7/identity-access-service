@@ -25,7 +25,6 @@ import io.identityaccess.domain.model.session.valueobject.SessionId;
 import io.identityaccess.domain.model.session.valueobject.SessionTimestamps;
 import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.domain.service.SessionPolicy;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -79,19 +78,7 @@ class LogoutUseCaseTest {
         when(clockPort.now()).thenReturn(now);
         when(sessionPersistencePort.update(any())).thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
         when(securityAuditPort.recordSessionRevoked(any())).thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(new OutboxEventRow(
-                "evt-3",
-                "Session",
-                "ses-1",
-                "SessionRevoked",
-                "{}",
-                "PENDING",
-                now,
-                null,
-                0,
-                null,
-                now,
-                now)));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         LogoutResult result = useCase.handle(new LogoutCommand("ses-1")).block();
 

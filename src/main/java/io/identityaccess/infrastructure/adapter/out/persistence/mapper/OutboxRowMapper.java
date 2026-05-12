@@ -1,6 +1,7 @@
 package io.identityaccess.infrastructure.adapter.out.persistence.mapper;
 
 import io.identityaccess.domain.event.DomainEvent;
+import io.identityaccess.application.port.out.persistence.OutboxPersistencePort.PendingOutboxEvent;
 import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +34,16 @@ public class OutboxRowMapper {
                 now);
     }
 
+    public PendingOutboxEvent toPendingEvent(OutboxEventRow row) {
+        return new PendingOutboxEvent(
+                row.eventId(),
+                row.aggregateType(),
+                row.aggregateId(),
+                row.eventType(),
+                row.payload(),
+                row.retryCount());
+    }
+
     private String toPayload(DomainEvent event) {
         try {
             return objectMapper.writeValueAsString(event.payload());
@@ -53,7 +64,7 @@ public class OutboxRowMapper {
                     "PermissionDisabled",
                     "PermissionGrantedToRole",
                     "PermissionRevokedFromRole" -> "Access";
-            case "AccountRegistered", "AccountBlocked" -> "Account";
+            case "AccountRegistered", "AccountBlocked", "AccountUnblocked", "AccountAuthenticationFailed" -> "Account";
             default -> "Domain";
         };
     }

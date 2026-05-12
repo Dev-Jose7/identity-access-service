@@ -67,6 +67,10 @@ tasks.test {
     finalizedBy(tasks.jacocoTestReport)
 }
 
+tasks.bootJar {
+    archiveFileName.set("identity-access-service.jar")
+}
+
 tasks.register<Test>("integrationTest") {
     description = "Runs integration tests backed by Testcontainers."
     group = "verification"

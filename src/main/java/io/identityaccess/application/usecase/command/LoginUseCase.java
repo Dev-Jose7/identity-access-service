@@ -13,12 +13,17 @@ import io.identityaccess.application.port.out.persistence.UserPersistencePort;
 import io.identityaccess.application.port.out.security.JwtSigningPort;
 import io.identityaccess.application.port.out.security.PasswordHashPort;
 import io.identityaccess.application.result.LoginResult;
+import io.identityaccess.domain.exception.DomainException;
 import io.identityaccess.domain.exception.InvalidCredentialsException;
+import io.identityaccess.domain.exception.UserNotEnabledException;
 import io.identityaccess.domain.model.session.SessionAggregate;
 import io.identityaccess.domain.model.session.valueobject.ClientDevice;
 import io.identityaccess.domain.model.session.valueobject.ClientIp;
 import io.identityaccess.domain.model.user.UserAggregate;
+import io.identityaccess.domain.model.user.entity.UserLoginAttempt;
+import io.identityaccess.domain.model.user.event.AccountAuthenticationFailedEvent;
 import io.identityaccess.domain.model.user.valueobject.EmailAddress;
+import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.domain.service.PasswordPolicy;
 import io.identityaccess.domain.service.SessionPolicy;
 import io.identityaccess.domain.service.TokenPolicy;
@@ -68,7 +73,17 @@ public class LoginUseCase implements LoginCommandUseCase {
 
         return securityRateLimitPort
                 .ensureLoginAllowed(email, clientIp)
-                .then(Mono.defer(() -> userPersistencePort.loadForLogin(email)))
+                .then(Mono.defer(() -> userPersistencePort.loadForLogin(email)
+                        .onErrorResume(InvalidCredentialsException.class, exception ->
+                                recordAuthenticationFailure(
+                                        email,
+                                        null,
+                                        clientDevice,
+                                        clientIp,
+                                        "INVALID_CREDENTIALS",
+                                        clockPort.now(),
+                                        null)
+                                        .then(Mono.error(exception)))))
                 .flatMap(user -> authenticateAndOpenSession(user, command.rawPassword(), clientDevice, clientIp))
                 .flatMap(context -> sessionPersistencePort.create(context.session()).map(savedSession -> new MaterializedLoginContext(context.user(), savedSession)))
                 .flatMap(context -> userPersistencePort.loadAuthorizationSnapshot(context.user().id())
@@ -90,14 +105,69 @@ public class LoginUseCase implements LoginCommandUseCase {
                     Instant now = clockPort.now();
                     try {
                         user.authenticate(passwordMatches, passwordPolicy, clientIp, now);
-                    } catch (InvalidCredentialsException exception) {
-                        return userPersistencePort.recordLoginAttempt(user.lastAttempt())
+                    } catch (DomainException exception) {
+                        UserLoginAttempt failedAttempt = failedAttemptFor(user, clientIp, now);
+                        return recordAuthenticationFailure(
+                                user.email(),
+                                user.id(),
+                                clientDevice,
+                                clientIp,
+                                failureReason(exception),
+                                now,
+                                failedAttempt)
                                 .then(Mono.error(exception));
                     }
                     SessionAggregate session = SessionAggregate.open(user, clientDevice, clientIp, now, sessionPolicy, tokenPolicy);
                     return userPersistencePort.recordLoginAttempt(user.lastAttempt())
                             .thenReturn(new AuthenticatedLoginContext(user, session));
                 });
+    }
+
+    private Mono<Void> recordAuthenticationFailure(
+            EmailAddress email,
+            UserId userId,
+            ClientDevice clientDevice,
+            ClientIp clientIp,
+            String failureReason,
+            Instant occurredAt,
+            UserLoginAttempt failedAttempt) {
+        Mono<Void> attemptWrite = failedAttempt == null
+                ? Mono.empty()
+                : userPersistencePort.recordLoginAttempt(failedAttempt);
+
+        return attemptWrite
+                .then(securityAuditPort.recordLoginFailure(
+                        email,
+                        userId,
+                        clientIp,
+                        clientDevice,
+                        failureReason,
+                        occurredAt))
+                .then(outboxPersistencePort.store(AccountAuthenticationFailedEvent.create(
+                        email,
+                        userId,
+                        clientIp,
+                        failureReason,
+                        occurredAt)))
+                .then();
+    }
+
+    private UserLoginAttempt failedAttemptFor(UserAggregate user, ClientIp clientIp, Instant now) {
+        UserLoginAttempt lastAttempt = user.lastAttempt();
+        if (lastAttempt != null && !lastAttempt.success() && now.equals(lastAttempt.occurredAt())) {
+            return lastAttempt;
+        }
+        return UserLoginAttempt.failed(user.id(), clientIp, now);
+    }
+
+    private String failureReason(DomainException exception) {
+        if (exception instanceof UserNotEnabledException) {
+            return "ACCOUNT_NOT_ENABLED";
+        }
+        if (exception instanceof InvalidCredentialsException) {
+            return "INVALID_CREDENTIALS";
+        }
+        return exception.errorCode();
     }
 
     private record AuthenticatedLoginContext(UserAggregate user, SessionAggregate session) {}

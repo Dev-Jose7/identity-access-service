@@ -20,7 +20,6 @@ import io.identityaccess.application.result.catalog.PermissionGrantResult;
 import io.identityaccess.application.result.catalog.RoleCatalogResult;
 import io.identityaccess.application.usecase.command.AccessCatalogUseCase;
 import io.identityaccess.domain.event.DomainEvent;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,7 +55,7 @@ class AccessCatalogUseCaseTest {
         when(securityAuditPort.recordAccessCatalogChanged(
                 "actor-1", "ROLE_CREATED", "ROLE", "role-1", "ACCESS_OPERATOR", true))
                 .thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any(DomainEvent.class))).thenReturn(Mono.just(outboxRow("evt-1", "RoleCreated")));
+        when(outboxPersistencePort.store(any(DomainEvent.class))).thenReturn(Mono.empty());
 
         RoleCatalogResult result = useCase.createRole(new CreateRoleCommand(
                         "ACCESS_OPERATOR", "Operator", false, "actor-1"))
@@ -126,7 +125,7 @@ class AccessCatalogUseCaseTest {
         when(securityAuditPort.recordAccessCatalogChanged(
                 "actor-1", "PERMISSION_GRANTED_TO_ROLE", "ROLE", "role-1", "iam.account.read", true))
                 .thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any(DomainEvent.class))).thenReturn(Mono.just(outboxRow("evt-2", "PermissionGrantedToRole")));
+        when(outboxPersistencePort.store(any(DomainEvent.class))).thenReturn(Mono.empty());
 
         PermissionGrantResult result = useCase.grantPermissionToRole(new GrantPermissionToRoleCommand(
                         "role-1", "iam.account.read", "actor-1"))
@@ -144,21 +143,5 @@ class AccessCatalogUseCaseTest {
                 outboxPersistencePort,
                 securityAuditPort,
                 clockPort);
-    }
-
-    private OutboxEventRow outboxRow(String eventId, String eventType) {
-        return new OutboxEventRow(
-                eventId,
-                "Access",
-                "aggregate-1",
-                eventType,
-                "{}",
-                "PENDING",
-                Instant.parse("2026-01-01T00:00:00Z"),
-                null,
-                0,
-                null,
-                Instant.parse("2026-01-01T00:00:00Z"),
-                Instant.parse("2026-01-01T00:00:00Z"));
     }
 }

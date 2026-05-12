@@ -60,10 +60,11 @@ public interface ReactiveOutboxEventRepository extends ReactiveCrudRepository<Ou
                    occurred_at, published_at, retry_count, last_error, created_at, updated_at
             FROM outbox_event
             WHERE status = 'PENDING'
+              AND retry_count < :maxRetries
             ORDER BY occurred_at ASC
             LIMIT :batchSize
             """)
-    Flux<OutboxEventRow> findPending(@Param("batchSize") int batchSize);
+    Flux<OutboxEventRow> findPending(@Param("batchSize") int batchSize, @Param("maxRetries") int maxRetries);
 
     @Modifying
     @Query("""
@@ -72,4 +73,22 @@ public interface ReactiveOutboxEventRepository extends ReactiveCrudRepository<Ou
             WHERE event_id = :eventId
             """)
     Mono<Integer> markPublished(@Param("eventId") String eventId, @Param("publishedAt") Instant publishedAt);
+
+    @Modifying
+    @Query("""
+            UPDATE outbox_event
+            SET retry_count = retry_count + 1,
+                last_error = :lastError,
+                status = CASE
+                    WHEN retry_count + 1 >= :maxRetries THEN 'FAILED'
+                    ELSE 'PENDING'
+                END,
+                updated_at = :failedAt
+            WHERE event_id = :eventId
+            """)
+    Mono<Integer> markFailed(
+            @Param("eventId") String eventId,
+            @Param("lastError") String lastError,
+            @Param("maxRetries") int maxRetries,
+            @Param("failedAt") Instant failedAt);
 }

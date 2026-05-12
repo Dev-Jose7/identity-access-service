@@ -2,9 +2,14 @@ package io.identityaccess.infrastructure.adapter.out.persistence;
 
 import io.identityaccess.application.port.out.audit.SecurityAuditPort;
 import io.identityaccess.domain.model.session.SessionAggregate;
+import io.identityaccess.domain.model.session.valueobject.ClientDevice;
+import io.identityaccess.domain.model.session.valueobject.ClientIp;
 import io.identityaccess.domain.model.user.UserAggregate;
+import io.identityaccess.domain.model.user.valueobject.EmailAddress;
+import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.infrastructure.adapter.out.persistence.mapper.AuthAuditRowMapper;
 import io.identityaccess.infrastructure.adapter.out.persistence.repository.ReactiveAuthAuditRepository;
+import java.time.Instant;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -22,6 +27,23 @@ public class AuthAuditR2dbcRepositoryAdapter implements SecurityAuditPort {
     @Override
     public Mono<Void> recordLoginSuccess(UserAggregate user, SessionAggregate session) {
         return insert(authAuditRowMapper.toLoginSuccessRow(user, session));
+    }
+
+    @Override
+    public Mono<Void> recordLoginFailure(
+            EmailAddress email,
+            UserId userId,
+            ClientIp clientIp,
+            ClientDevice clientDevice,
+            String failureReason,
+            Instant occurredAt) {
+        return insert(authAuditRowMapper.toLoginFailureRow(
+                email,
+                userId,
+                clientIp,
+                clientDevice,
+                failureReason,
+                occurredAt));
     }
 
     @Override

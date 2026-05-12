@@ -1,10 +1,13 @@
 package io.identityaccess.application.usecase;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +27,8 @@ import io.identityaccess.application.result.LoginResult;
 import io.identityaccess.application.usecase.command.LoginUseCase;
 import io.identityaccess.domain.exception.InvalidCredentialsException;
 import io.identityaccess.domain.exception.RateLimitExceededException;
+import io.identityaccess.domain.exception.UserNotEnabledException;
+import io.identityaccess.domain.event.DomainEvent;
 import io.identityaccess.domain.model.user.UserAggregate;
 import io.identityaccess.domain.model.user.entity.UserCredential;
 import io.identityaccess.domain.model.user.entity.UserLoginAttempt;
@@ -35,7 +40,6 @@ import io.identityaccess.domain.model.user.valueobject.UserId;
 import io.identityaccess.domain.service.PasswordPolicy;
 import io.identityaccess.domain.service.SessionPolicy;
 import io.identityaccess.domain.service.TokenPolicy;
-import io.identityaccess.infrastructure.adapter.out.persistence.entity.OutboxEventRow;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -119,8 +123,7 @@ class LoginUseCaseTest {
         when(jwtSigningPort.signAccessToken(any(), any(), any(), any())).thenReturn(Mono.just("access-token"));
         when(jwtSigningPort.signRefreshToken(any())).thenReturn(Mono.just("refresh-token"));
         when(securityAuditPort.recordLoginSuccess(any(), any())).thenReturn(Mono.empty());
-        when(outboxPersistencePort.store(any())).thenReturn(Mono.just(new OutboxEventRow(
-                "evt-1", "User", "usr-1", "SessionOpened", "{}", "PENDING", Instant.now(), null, 0, null, Instant.now(), Instant.now())));
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         LoginResult result = useCase.handle(command).block();
 
@@ -214,6 +217,8 @@ class LoginUseCaseTest {
         when(userPersistencePort.recordLoginAttempt(any())).thenReturn(Mono.empty());
         when(passwordHashPort.matches(anyString(), anyString())).thenReturn(Mono.just(false));
         when(clockPort.now()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+        when(securityAuditPort.recordLoginFailure(any(), any(), any(), any(), anyString(), any())).thenReturn(Mono.empty());
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
 
         assertThrows(InvalidCredentialsException.class, () -> useCase.handle(command).block());
 
@@ -221,6 +226,118 @@ class LoginUseCaseTest {
         verify(userPersistencePort).recordLoginAttempt(attemptCaptor.capture());
         assertEquals(false, attemptCaptor.getValue().success());
         assertEquals("usr-1", attemptCaptor.getValue().userId().value());
-        verifyNoInteractions(sessionPersistencePort, jwtSigningPort, securityAuditPort, outboxPersistencePort);
+        ArgumentCaptor<DomainEvent> eventCaptor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(outboxPersistencePort).store(eventCaptor.capture());
+        assertEquals("AccountAuthenticationFailed", eventCaptor.getValue().eventType());
+        assertEquals("usr-1", eventCaptor.getValue().aggregateId());
+        assertEquals("user@example.test", eventCaptor.getValue().payload().get("email"));
+        assertEquals("usr-1", eventCaptor.getValue().payload().get("userId"));
+        assertEquals("10.0.0.1", eventCaptor.getValue().payload().get("clientIp"));
+        assertEquals("INVALID_CREDENTIALS", eventCaptor.getValue().payload().get("failureReason"));
+        assertFalse(eventCaptor.getValue().payload().containsKey("password"));
+        assertFalse(eventCaptor.getValue().payload().containsKey("token"));
+        verify(securityAuditPort).recordLoginFailure(any(), any(), any(), any(), anyString(), any());
+        verifyNoInteractions(sessionPersistencePort, jwtSigningPort);
+    }
+
+    @Test
+    void shouldEmitAuthenticationFailedEventWhenAccountCannotBeResolved() {
+        LoginUseCase useCase = new LoginUseCase(
+                new LoginCommandAssembler(),
+                securityRateLimitPort,
+                userPersistencePort,
+                passwordHashPort,
+                clockPort,
+                new SessionPolicy(),
+                new TokenPolicy(Duration.ofMinutes(15), Duration.ofDays(7)),
+                sessionPersistencePort,
+                jwtSigningPort,
+                securityAuditPort,
+                outboxPersistencePort,
+                new LoginResultMapper(),
+                new PasswordPolicy());
+
+        LoginCommand command = new LoginCommand(
+                "missing@example.test",
+                "raw-secret",
+                "Mozilla/5.0",
+                "10.0.0.2");
+
+        when(securityRateLimitPort.ensureLoginAllowed(any(), any())).thenReturn(Mono.empty());
+        when(userPersistencePort.loadForLogin(any())).thenReturn(Mono.error(new InvalidCredentialsException()));
+        when(clockPort.now()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+        when(securityAuditPort.recordLoginFailure(any(), any(), any(), any(), anyString(), any())).thenReturn(Mono.empty());
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
+
+        assertThrows(InvalidCredentialsException.class, () -> useCase.handle(command).block());
+
+        verify(userPersistencePort, never()).recordLoginAttempt(any());
+        ArgumentCaptor<DomainEvent> eventCaptor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(outboxPersistencePort).store(eventCaptor.capture());
+        assertEquals("AccountAuthenticationFailed", eventCaptor.getValue().eventType());
+        assertEquals("missing@example.test", eventCaptor.getValue().aggregateId());
+        assertEquals("missing@example.test", eventCaptor.getValue().payload().get("email"));
+        assertFalse(eventCaptor.getValue().payload().containsKey("userId"));
+        assertEquals("10.0.0.2", eventCaptor.getValue().payload().get("clientIp"));
+        assertEquals("INVALID_CREDENTIALS", eventCaptor.getValue().payload().get("failureReason"));
+        assertFalse(eventCaptor.getValue().payload().containsKey("password"));
+        assertFalse(eventCaptor.getValue().payload().containsKey("refreshToken"));
+        verify(securityAuditPort).recordLoginFailure(any(), any(), any(), any(), anyString(), any());
+        verifyNoInteractions(passwordHashPort, sessionPersistencePort, jwtSigningPort);
+    }
+
+    @Test
+    void shouldPersistAttemptAndEmitAuthenticationFailedEventWhenAccountIsBlocked() {
+        LoginUseCase useCase = new LoginUseCase(
+                new LoginCommandAssembler(),
+                securityRateLimitPort,
+                userPersistencePort,
+                passwordHashPort,
+                clockPort,
+                new SessionPolicy(),
+                new TokenPolicy(Duration.ofMinutes(15), Duration.ofDays(7)),
+                sessionPersistencePort,
+                jwtSigningPort,
+                securityAuditPort,
+                outboxPersistencePort,
+                new LoginResultMapper(),
+                new PasswordPolicy());
+
+        UserAggregate user = new UserAggregate(
+                UserId.of("usr-locked"),
+                EmailAddress.of("locked@example.test"),
+                UserStatus.BLOCKED,
+                new UserCredential("cred-1", UserId.of("usr-locked"), EmailAddress.of("locked@example.test"), "hash", CredentialStatus.ACTIVE),
+                List.of(),
+                Set.of("ACCOUNT_USER"));
+
+        LoginCommand command = new LoginCommand(
+                "locked@example.test",
+                "raw-secret",
+                "Mozilla/5.0",
+                "10.0.0.3");
+
+        when(securityRateLimitPort.ensureLoginAllowed(any(), any())).thenReturn(Mono.empty());
+        when(userPersistencePort.loadForLogin(any())).thenReturn(Mono.just(user));
+        when(userPersistencePort.recordLoginAttempt(any())).thenReturn(Mono.empty());
+        when(passwordHashPort.matches(anyString(), anyString())).thenReturn(Mono.just(true));
+        when(clockPort.now()).thenReturn(Instant.parse("2026-01-01T00:00:00Z"));
+        when(securityAuditPort.recordLoginFailure(any(), any(), any(), any(), anyString(), any())).thenReturn(Mono.empty());
+        when(outboxPersistencePort.store(any())).thenReturn(Mono.empty());
+
+        assertThrows(UserNotEnabledException.class, () -> useCase.handle(command).block());
+
+        ArgumentCaptor<UserLoginAttempt> attemptCaptor = ArgumentCaptor.forClass(UserLoginAttempt.class);
+        verify(userPersistencePort).recordLoginAttempt(attemptCaptor.capture());
+        assertEquals(false, attemptCaptor.getValue().success());
+        assertEquals("usr-locked", attemptCaptor.getValue().userId().value());
+
+        ArgumentCaptor<DomainEvent> eventCaptor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(outboxPersistencePort).store(eventCaptor.capture());
+        assertEquals("AccountAuthenticationFailed", eventCaptor.getValue().eventType());
+        assertEquals("usr-locked", eventCaptor.getValue().aggregateId());
+        assertEquals("ACCOUNT_NOT_ENABLED", eventCaptor.getValue().payload().get("failureReason"));
+        assertTrue(eventCaptor.getValue().payload().containsKey("occurredAt"));
+        verifyNoInteractions(sessionPersistencePort, jwtSigningPort);
     }
 }
