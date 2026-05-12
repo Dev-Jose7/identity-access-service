@@ -13,6 +13,23 @@ Guía de integración para sistemas consumidores:
 - [docs/integration/consumer-integration-guide.md](docs/integration/consumer-integration-guide.md)
 - [docs/integration/endpoint-contracts-quick-test.md](docs/integration/endpoint-contracts-quick-test.md)
 
+Documentación de gobierno, seguridad y operación:
+
+- [CHANGELOG.md](CHANGELOG.md)
+- [LICENSE](LICENSE)
+- [SECURITY.md](SECURITY.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [docs/architecture/architecture.md](docs/architecture/architecture.md)
+- [docs/security/threat-model.md](docs/security/threat-model.md)
+- [docs/operations/deployment.md](docs/operations/deployment.md)
+- [docs/operations/release-checklist.md](docs/operations/release-checklist.md)
+
+### Licencia
+
+Este proyecto se distribuye bajo Elastic License 2.0. Esta licencia permite usar, copiar, distribuir y modificar el software, pero restringe ofrecerlo a terceros como servicio hospedado o gestionado que exponga una parte sustancial de su funcionalidad.
+
+Consulta el texto completo en [LICENSE](LICENSE).
+
 ### Capacidades principales
 
 - Registro público controlado de cuentas.
@@ -57,6 +74,7 @@ Infraestructura usada por el servicio:
 - `.env.example` contiene la plantilla completa para desarrollo.
 - `docker-compose.yml` es la fuente de verdad para infraestructura local.
 - `application.yml`, `application-local.yml` y `application-docker.yml` definen cómo se consumen las propiedades.
+- `APP_VERSION` controla la versión publicada en OpenAPI.
 - En `local` y `docker`, el bootstrap de schema está habilitado por defecto.
 - En `prod`, el bootstrap de schema queda deshabilitado salvo que `APP_DATABASE_SCHEMA_INITIALIZE_ON_STARTUP=true` se configure explícitamente.
 - Las llaves RSA de desarrollo no deben usarse en producción.
@@ -269,6 +287,22 @@ APP_KAFKA_TOPIC_PERMISSION_UPDATED=iam.permission-updated.v1
 APP_KAFKA_TOPIC_PERMISSION_DISABLED=iam.permission-disabled.v1
 APP_KAFKA_TOPIC_PERMISSION_GRANTED_TO_ROLE=iam.permission-granted-to-role.v1
 APP_KAFKA_TOPIC_PERMISSION_REVOKED_FROM_ROLE=iam.permission-revoked-from-role.v1
+```
+
+En producción no dependas de `auto.create.topics.enable`. Crea los topics antes de habilitar el relay:
+
+```bash
+KAFKA_TOPICS_CREATE_MODE=cli \
+KAFKA_BOOTSTRAP_SERVERS=<broker:9092> \
+KAFKA_TOPIC_PARTITIONS=3 \
+KAFKA_TOPIC_REPLICATION_FACTOR=3 \
+scripts/operations/create-kafka-topics.sh
+```
+
+Con Docker Compose local:
+
+```bash
+KAFKA_TOPICS_CREATE_MODE=docker-compose scripts/operations/create-kafka-topics.sh
 ```
 
 Expiración persistida de sesiones por vencimiento de refresh token:
@@ -572,6 +606,23 @@ Integration guide for consumer systems:
 - [docs/integration/consumer-integration-guide.md](docs/integration/consumer-integration-guide.md)
 - [docs/integration/endpoint-contracts-quick-test.md](docs/integration/endpoint-contracts-quick-test.md)
 
+Governance, security and operations documentation:
+
+- [CHANGELOG.md](CHANGELOG.md)
+- [LICENSE](LICENSE)
+- [SECURITY.md](SECURITY.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [docs/architecture/architecture.md](docs/architecture/architecture.md)
+- [docs/security/threat-model.md](docs/security/threat-model.md)
+- [docs/operations/deployment.md](docs/operations/deployment.md)
+- [docs/operations/release-checklist.md](docs/operations/release-checklist.md)
+
+### License
+
+This project is distributed under Elastic License 2.0. This license allows use, copy, distribution and modification of the software, but restricts offering it to third parties as a hosted or managed service that exposes a substantial set of its functionality.
+
+See the full text in [LICENSE](LICENSE).
+
 ### Main capabilities
 
 - Controlled public account registration.
@@ -616,6 +667,7 @@ Infrastructure used by the service:
 - `.env.example` contains the full development template.
 - `docker-compose.yml` is the source of truth for local infrastructure.
 - `application.yml`, `application-local.yml`, and `application-docker.yml` define how properties are consumed.
+- `APP_VERSION` controls the version published in OpenAPI.
 - In `local` and `docker`, schema bootstrap is enabled by default.
 - In `prod`, schema bootstrap is disabled unless `APP_DATABASE_SCHEMA_INITIALIZE_ON_STARTUP=true` is explicitly configured.
 - Development RSA keys must not be used in production.
@@ -828,6 +880,22 @@ APP_KAFKA_TOPIC_PERMISSION_UPDATED=iam.permission-updated.v1
 APP_KAFKA_TOPIC_PERMISSION_DISABLED=iam.permission-disabled.v1
 APP_KAFKA_TOPIC_PERMISSION_GRANTED_TO_ROLE=iam.permission-granted-to-role.v1
 APP_KAFKA_TOPIC_PERMISSION_REVOKED_FROM_ROLE=iam.permission-revoked-from-role.v1
+```
+
+In production, do not depend on `auto.create.topics.enable`. Create topics before enabling the relay:
+
+```bash
+KAFKA_TOPICS_CREATE_MODE=cli \
+KAFKA_BOOTSTRAP_SERVERS=<broker:9092> \
+KAFKA_TOPIC_PARTITIONS=3 \
+KAFKA_TOPIC_REPLICATION_FACTOR=3 \
+scripts/operations/create-kafka-topics.sh
+```
+
+With local Docker Compose:
+
+```bash
+KAFKA_TOPICS_CREATE_MODE=docker-compose scripts/operations/create-kafka-topics.sh
 ```
 
 Persisted session expiration when refresh token lifetime ends:

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.identityaccess"
-version = "0.1.0-SNAPSHOT"
+version = "1.0.0"
 
 description = "Identity and access microservice for self-hosted authentication, sessions, and authorization"
 
