@@ -284,6 +284,16 @@ Para validación de release en ambientes limpios puedes ejecutar:
 BASE_URL=http://localhost:8080 scripts/smoke/identity-access-release-smoke.sh
 ```
 
+Si el Kafka de destino no tiene auto-creación de topics, crea previamente los topics publicados por el outbox:
+
+```bash
+KAFKA_TOPICS_CREATE_MODE=cli \
+KAFKA_BOOTSTRAP_SERVERS=<broker:9092> \
+KAFKA_TOPIC_PARTITIONS=3 \
+KAFKA_TOPIC_REPLICATION_FACTOR=3 \
+scripts/operations/create-kafka-topics.sh
+```
+
 El procedimiento break-glass de `SYSTEM_ADMIN` está documentado en `docs/operations/break-glass-system-admin.md` y requiere acceso directo a PostgreSQL.
 
 ## 7. Refresh y logout
